@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+out/
+*.egg-info/
+target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Runtime
+*.pid
+*.sock
+
+# Secrets
+credentials.json
+secrets.json
+*.pem
+*.key
+
+# Data persistence
+data/*.json
+
+# Task working directories
+tasks/
+
+# Next.js
+.next/

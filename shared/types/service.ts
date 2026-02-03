@@ -1,0 +1,60 @@
+/**
+ * Standard interface that all AI services must implement.
+ * New services are added by implementing this interface and registering with the scheduler.
+ */
+
+export type ServiceStatus = "idle" | "running" | "paused" | "stopped" | "errored";
+
+export interface ServiceConfig {
+  id: string;
+  name: string;
+  description: string;
+  budget: number;
+}
+
+export interface TaskDefinition {
+  taskId: string;
+  taskLabel: string;
+  prompt: string;
+  maxIterations: number;
+  workingDir: string;
+}
+
+export interface TaskResult {
+  taskId: string;
+  sessionIds: string[];
+  success: boolean;
+  output: string;
+}
+
+export interface TaskLog {
+  taskId: string;
+  serviceId: string;
+  iteration: number;
+  tokensUsed: number;
+  costEstimate: number;
+  message: string;
+  timestamp: string;
+}
+
+export interface ServiceReport {
+  serviceId: string;
+  status: ServiceStatus;
+  totalTokensUsed: number;
+  totalCost: number;
+  budgetRemaining: number;
+  tasksCompleted: number;
+  lastRun: string | null;
+  logs: TaskLog[];
+}
+
+export interface Service {
+  readonly config: ServiceConfig;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  pause(): Promise<void>;
+  resume(): Promise<void>;
+  status(): Promise<ServiceStatus>;
+  logs(limit?: number): Promise<TaskLog[]>;
+  report(): Promise<ServiceReport>;
+}

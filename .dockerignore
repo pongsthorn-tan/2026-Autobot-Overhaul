@@ -1,0 +1,11 @@
+node_modules
+web-ui/node_modules
+web-ui/.next
+dist
+data
+logs
+tasks
+.git
+.env
+*.md
+docs
