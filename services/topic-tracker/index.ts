@@ -26,14 +26,21 @@ export class TopicTrackerService extends BaseService {
       return;
     }
 
-    for (const topic of topics) {
-      if (this._status !== "running") break;
+    await this.beginRun();
+    try {
+      for (const topic of topics) {
+        if (this._status !== "running") break;
 
-      await this.runTask({
-        label: `track: ${topic}`,
-        prompt: `Check for recent developments and changes regarding: "${topic}". Summarize any new findings, compare with known information, and highlight significant changes.`,
-        maxTurns: 3,
-      });
+        await this.runTask({
+          label: `track: ${topic}`,
+          prompt: `Check for recent developments and changes regarding: "${topic}". Summarize any new findings, compare with known information, and highlight significant changes.`,
+          maxTurns: 3,
+        });
+      }
+      await this.completeRun("completed");
+    } catch (err) {
+      await this.completeRun("errored");
+      throw err;
     }
 
     this._status = "idle";

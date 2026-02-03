@@ -13,6 +13,7 @@ export interface ClaudeTaskParams {
   prompt: string;
   workingDir: string;
   maxTurns?: number;
+  model?: string;
 }
 
 export interface ClaudeTaskResult {
@@ -53,6 +54,10 @@ export async function spawnClaudeTask(
     "-p",
     params.prompt,
   ];
+
+  if (params.model) {
+    args.push("--model", params.model);
+  }
 
   if (params.maxTurns) {
     args.push("--max-turns", String(params.maxTurns));

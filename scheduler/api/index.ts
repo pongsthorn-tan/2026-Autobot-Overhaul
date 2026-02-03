@@ -56,8 +56,8 @@ export class SchedulerAPI {
     return result;
   }
 
-  async updateSchedule(serviceId: string, schedule: Schedule): Promise<void> {
-    await this.engine.scheduleService(serviceId, schedule);
+  async updateSchedule(serviceId: string, schedule: Schedule, maxCycles?: number): Promise<void> {
+    await this.engine.scheduleService(serviceId, schedule, maxCycles);
   }
 
   async getState(): Promise<SchedulerState> {

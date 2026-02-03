@@ -90,3 +90,39 @@ export interface LogEntry {
   tokens?: number;
   cost?: number;
 }
+
+export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';
+
+export interface ServiceModelConfig {
+  model: ClaudeModel;
+}
+
+export interface RunTaskResult {
+  taskId: string;
+  label: string;
+  iteration: number;
+  output: string;
+  tokensUsed: number;
+  costEstimate: number;
+  completedAt: string;
+}
+
+export type RunStatus = 'running' | 'completed' | 'errored';
+
+export interface RunRecord {
+  runId: string;
+  cycleNumber: number;
+  serviceId: string;
+  model: ClaudeModel;
+  startedAt: string;
+  completedAt: string | null;
+  status: RunStatus;
+  tasks: RunTaskResult[];
+  totalTokens: number;
+  totalCost: number;
+}
+
+export interface NextRunsResponse {
+  serviceId: string;
+  nextRuns: string[];
+}

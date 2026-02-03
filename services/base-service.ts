@@ -4,13 +4,21 @@ import {
   ServiceStatus,
   TaskLog,
   ServiceReport,
+  ClaudeModel,
+  MODEL_IDS,
+  ServiceModelConfig,
+  RunRecord,
+  RunTaskResult,
+  RunStatus,
 } from "../shared/types/service.js";
 import { spawnClaudeTask } from "../shared/claude-runner/index.js";
 import { CostTracker } from "../cost-control/tracker/index.js";
 import { createLogger, Logger } from "../shared/logger/index.js";
 import { generateTaskId } from "../shared/utils/index.js";
+import { JsonStore } from "../shared/persistence/index.js";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
+import { v4 as uuidv4 } from "uuid";
 
 const TASKS_BASE = path.resolve(process.cwd(), "tasks");
 
@@ -23,6 +31,15 @@ export abstract class BaseService implements Service {
   private lastRun: string | null = null;
   private tasksCompleted = 0;
 
+  // Model selection
+  protected _model: ClaudeModel = "sonnet";
+  private _configStore: JsonStore<ServiceModelConfig> | null = null;
+
+  // Run tracking
+  private _runsStore: JsonStore<RunRecord[]> | null = null;
+  private _currentRun: RunRecord | null = null;
+  private _cycleCount = 0;
+
   constructor(costTracker: CostTracker) {
     this.costTracker = costTracker;
     this.logger = createLogger(this.getServiceId());
@@ -30,6 +47,93 @@ export abstract class BaseService implements Service {
 
   protected abstract getServiceId(): string;
   abstract start(): Promise<void>;
+
+  private getConfigStore(): JsonStore<ServiceModelConfig> {
+    if (!this._configStore) {
+      this._configStore = new JsonStore<ServiceModelConfig>(
+        `data/service-config-${this.getServiceId()}.json`,
+        { model: "sonnet" },
+      );
+    }
+    return this._configStore;
+  }
+
+  private getRunsStore(): JsonStore<RunRecord[]> {
+    if (!this._runsStore) {
+      this._runsStore = new JsonStore<RunRecord[]>(
+        `data/${this.getServiceId()}-runs.json`,
+        [],
+      );
+    }
+    return this._runsStore;
+  }
+
+  async loadServiceConfig(): Promise<void> {
+    const config = await this.getConfigStore().load();
+    this._model = config.model;
+    // Load cycle count from persisted runs
+    const runs = await this.getRunsStore().load();
+    this._cycleCount = runs.length;
+    this.logger.info(`Loaded config: model=${this._model}, cycles=${this._cycleCount}`);
+  }
+
+  async saveServiceConfig(): Promise<void> {
+    await this.getConfigStore().save({ model: this._model });
+  }
+
+  getServiceConfig(): ServiceModelConfig {
+    return { model: this._model };
+  }
+
+  async setModel(model: ClaudeModel): Promise<void> {
+    this._model = model;
+    await this.saveServiceConfig();
+  }
+
+  // Run tracking methods
+  async beginRun(): Promise<void> {
+    this._cycleCount++;
+    this._currentRun = {
+      runId: uuidv4(),
+      cycleNumber: this._cycleCount,
+      serviceId: this.getServiceId(),
+      model: this._model,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      status: "running",
+      tasks: [],
+      totalTokens: 0,
+      totalCost: 0,
+    };
+  }
+
+  recordTaskInRun(result: RunTaskResult): void {
+    if (!this._currentRun) return;
+    this._currentRun.tasks.push(result);
+    this._currentRun.totalTokens += result.tokensUsed;
+    this._currentRun.totalCost += result.costEstimate;
+  }
+
+  async completeRun(status: RunStatus = "completed"): Promise<void> {
+    if (!this._currentRun) return;
+    this._currentRun.status = status;
+    this._currentRun.completedAt = new Date().toISOString();
+
+    const runs = await this.getRunsStore().load();
+    runs.push(this._currentRun);
+    await this.getRunsStore().save(runs);
+
+    this._currentRun = null;
+  }
+
+  async getRuns(): Promise<RunRecord[]> {
+    return this.getRunsStore().load();
+  }
+
+  async getRun(runId: string): Promise<RunRecord | undefined> {
+    const runs = await this.getRunsStore().load();
+    return runs.find((r) => r.runId === runId);
+  }
 
   protected async runTask(params: {
     label: string;
@@ -51,6 +155,7 @@ export abstract class BaseService implements Service {
       prompt: params.prompt,
       workingDir: taskDir,
       maxTurns: params.maxTurns ?? 5,
+      model: MODEL_IDS[this._model],
     });
 
     const costEntry = await this.costTracker.captureAndRecordCost({
@@ -82,6 +187,17 @@ export abstract class BaseService implements Service {
         result.stdout,
       );
     }
+
+    // Record task in current run
+    this.recordTaskInRun({
+      taskId,
+      label: params.label,
+      iteration,
+      output: result.stdout,
+      tokensUsed: costEntry.tokensInput + costEntry.tokensOutput,
+      costEstimate: costEntry.estimatedCost,
+      completedAt: new Date().toISOString(),
+    });
 
     return { taskId, output: result.stdout, costEntry };
   }

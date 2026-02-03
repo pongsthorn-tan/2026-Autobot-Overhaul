@@ -14,6 +14,8 @@ import { TopicTrackerService } from "../services/topic-tracker/index.js";
 import { ReportService } from "../services/report/index.js";
 import { CodeTaskService } from "../services/code-task/index.js";
 import { SelfImproveService } from "../services/self-improve/index.js";
+import { BaseService } from "../services/base-service.js";
+import { ClaudeModel } from "../shared/types/service.js";
 import { createServer } from "http";
 
 const logger = createLogger("system");
@@ -47,6 +49,13 @@ async function main(): Promise<void> {
   registry.register(report);
   registry.register(codeTask);
   registry.register(selfImprove);
+
+  // Load service configs on startup
+  for (const service of registry.list()) {
+    if (service instanceof BaseService) {
+      await (service as BaseService).loadServiceConfig();
+    }
+  }
 
   // Wire message bus subscriptions
   bus.subscribe("budget.exhausted", async (msg) => {
@@ -94,7 +103,7 @@ async function main(): Promise<void> {
 
     try {
       const body = await parseBody(req);
-      const result = await handleRoute(url.pathname, method, body, autobot);
+      const result = await handleRoute(url, method, body, autobot);
       res.writeHead(200);
       res.end(JSON.stringify(result));
     } catch (err) {
@@ -157,11 +166,13 @@ interface AutobotContext {
 }
 
 async function handleRoute(
-  pathname: string,
+  url: URL,
   method: string,
   body: Record<string, unknown>,
   ctx: AutobotContext,
 ): Promise<unknown> {
+  const pathname = url.pathname;
+
   // GET /api/services
   if (pathname === "/api/services" && method === "GET") {
     return ctx.schedulerAPI.listServices();
@@ -221,6 +232,58 @@ async function handleRoute(
     }
   }
 
+  // Service config routes: /api/services/:id/config
+  const configMatch = pathname.match(/^\/api\/services\/([^/]+)\/config$/);
+  if (configMatch) {
+    const serviceId = configMatch[1];
+    const service = ctx.registry.get(serviceId);
+    if (!service) throw new NotFoundError(`Service not found: ${serviceId}`);
+    if (!(service instanceof BaseService)) throw new Error("Service does not support config");
+
+    if (method === "GET") {
+      return (service as BaseService).getServiceConfig();
+    }
+    if (method === "PUT") {
+      const model = body.model as string;
+      if (model && ["haiku", "sonnet", "opus"].includes(model)) {
+        await (service as BaseService).setModel(model as ClaudeModel);
+      }
+      return (service as BaseService).getServiceConfig();
+    }
+  }
+
+  // Service runs routes: /api/services/:id/runs/:runId or /api/services/:id/runs
+  const runsDetailMatch = pathname.match(/^\/api\/services\/([^/]+)\/runs\/([^/]+)$/);
+  if (runsDetailMatch && method === "GET") {
+    const serviceId = runsDetailMatch[1];
+    const runId = runsDetailMatch[2];
+    const service = ctx.registry.get(serviceId);
+    if (!service) throw new NotFoundError(`Service not found: ${serviceId}`);
+    if (!(service instanceof BaseService)) throw new Error("Service does not support runs");
+    const run = await (service as BaseService).getRun(runId);
+    if (!run) throw new NotFoundError(`Run not found: ${runId}`);
+    return run;
+  }
+
+  const runsMatch = pathname.match(/^\/api\/services\/([^/]+)\/runs$/);
+  if (runsMatch && method === "GET") {
+    const serviceId = runsMatch[1];
+    const service = ctx.registry.get(serviceId);
+    if (!service) throw new NotFoundError(`Service not found: ${serviceId}`);
+    if (!(service instanceof BaseService)) throw new Error("Service does not support runs");
+    const runs = await (service as BaseService).getRuns();
+    return runs.reverse(); // reverse chronological
+  }
+
+  // Next execution times: /api/services/:id/next-runs?count=10
+  const nextRunsMatch = pathname.match(/^\/api\/services\/([^/]+)\/next-runs$/);
+  if (nextRunsMatch && method === "GET") {
+    const serviceId = nextRunsMatch[1];
+    const count = parseInt(url.searchParams.get("count") ?? "10", 10);
+    const times = ctx.engine.getNextExecutionTimes(serviceId, Math.min(count, 50));
+    return { serviceId, nextRuns: times };
+  }
+
   // Service-specific routes: /api/services/:id/*
   const serviceMatch = pathname.match(/^\/api\/services\/([^/]+)(?:\/(.+))?$/);
   if (serviceMatch) {
@@ -248,7 +311,14 @@ async function handleRoute(
       return { ok: true, serviceId, action: "resumed" };
     }
     if (action === "schedule" && method === "PUT") {
-      await ctx.schedulerAPI.updateSchedule(serviceId, body as unknown as import("../shared/types/scheduler.js").Schedule);
+      const maxCycles = body.maxCycles ? Number(body.maxCycles) : undefined;
+      const schedule = { ...body } as Record<string, unknown>;
+      delete schedule.maxCycles;
+      await ctx.schedulerAPI.updateSchedule(
+        serviceId,
+        schedule as unknown as import("../shared/types/scheduler.js").Schedule,
+        maxCycles,
+      );
       return { ok: true, serviceId, action: "scheduled" };
     }
   }

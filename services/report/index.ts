@@ -16,11 +16,18 @@ export class ReportService extends BaseService {
   async start(): Promise<void> {
     this._status = "running";
 
-    await this.runTask({
-      label: "system-report",
-      prompt: "Generate a comprehensive system status report summarizing all service activity, costs, and performance metrics.",
-      maxTurns: 3,
-    });
+    await this.beginRun();
+    try {
+      await this.runTask({
+        label: "system-report",
+        prompt: "Generate a comprehensive system status report summarizing all service activity, costs, and performance metrics.",
+        maxTurns: 3,
+      });
+      await this.completeRun("completed");
+    } catch (err) {
+      await this.completeRun("errored");
+      throw err;
+    }
 
     this._status = "idle";
   }

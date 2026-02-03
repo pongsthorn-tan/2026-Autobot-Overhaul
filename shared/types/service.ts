@@ -5,6 +5,43 @@
 
 export type ServiceStatus = "idle" | "running" | "paused" | "stopped" | "errored";
 
+export type ClaudeModel = "haiku" | "sonnet" | "opus";
+
+export const MODEL_IDS: Record<ClaudeModel, string> = {
+  haiku: "claude-haiku-4-20250514",
+  sonnet: "claude-sonnet-4-20250514",
+  opus: "claude-opus-4-20250514",
+};
+
+export interface ServiceModelConfig {
+  model: ClaudeModel;
+}
+
+export interface RunTaskResult {
+  taskId: string;
+  label: string;
+  iteration: number;
+  output: string;
+  tokensUsed: number;
+  costEstimate: number;
+  completedAt: string;
+}
+
+export type RunStatus = "running" | "completed" | "errored";
+
+export interface RunRecord {
+  runId: string;
+  cycleNumber: number;
+  serviceId: string;
+  model: ClaudeModel;
+  startedAt: string;
+  completedAt: string | null;
+  status: RunStatus;
+  tasks: RunTaskResult[];
+  totalTokens: number;
+  totalCost: number;
+}
+
 export interface ServiceConfig {
   id: string;
   name: string;

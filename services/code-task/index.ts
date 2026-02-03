@@ -32,14 +32,21 @@ export class CodeTaskService extends BaseService {
       return;
     }
 
-    for (const task of tasks) {
-      if (this._status !== "running") break;
+    await this.beginRun();
+    try {
+      for (const task of tasks) {
+        if (this._status !== "running") break;
 
-      await this.runTask({
-        label: task.description,
-        prompt: `Execute the following coding task:\n\n${task.description}\n\nTarget path: ${task.targetPath}`,
-        maxTurns: task.maxIterations,
-      });
+        await this.runTask({
+          label: task.description,
+          prompt: `Execute the following coding task:\n\n${task.description}\n\nTarget path: ${task.targetPath}`,
+          maxTurns: task.maxIterations,
+        });
+      }
+      await this.completeRun("completed");
+    } catch (err) {
+      await this.completeRun("errored");
+      throw err;
     }
 
     this._status = "idle";

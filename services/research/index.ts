@@ -26,14 +26,21 @@ export class ResearchService extends BaseService {
       return;
     }
 
-    for (const topic of topics) {
-      if (this._status !== "running") break;
+    await this.beginRun();
+    try {
+      for (const topic of topics) {
+        if (this._status !== "running") break;
 
-      await this.runTask({
-        label: topic,
-        prompt: `Research the following topic thoroughly and produce a structured summary with key findings, analysis, and sources:\n\n"${topic}"`,
-        maxTurns: 5,
-      });
+        await this.runTask({
+          label: topic,
+          prompt: `Research the following topic thoroughly and produce a structured summary with key findings, analysis, and sources:\n\n"${topic}"`,
+          maxTurns: 5,
+        });
+      }
+      await this.completeRun("completed");
+    } catch (err) {
+      await this.completeRun("errored");
+      throw err;
     }
 
     this._status = "idle";

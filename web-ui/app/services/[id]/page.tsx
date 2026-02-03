@@ -10,12 +10,20 @@ import {
   type Service,
   type Budget,
   type LogEntry,
+  type ClaudeModel,
+  type ServiceModelConfig,
+  type NextRunsResponse,
 } from '../../lib/api';
 
 interface CodeTask {
   description: string;
   targetPath: string;
   maxIterations: number;
+}
+
+interface ScheduledServiceInfo {
+  maxCycles?: number;
+  cyclesCompleted: number;
 }
 
 export default function ServiceDetailPage() {
@@ -29,6 +37,9 @@ export default function ServiceDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Model selection
+  const [model, setModel] = useState<ClaudeModel>('sonnet');
+
   // Budget form
   const [budgetAmount, setBudgetAmount] = useState('');
 
@@ -38,6 +49,9 @@ export default function ServiceDetailPage() {
   const [scheduleInterval, setScheduleInterval] = useState('');
   const [scheduleTimeOfDay, setScheduleTimeOfDay] = useState('');
   const [scheduleDays, setScheduleDays] = useState<string[]>([]);
+  const [maxCycles, setMaxCycles] = useState('');
+  const [cyclesCompleted, setCyclesCompleted] = useState(0);
+  const [nextRuns, setNextRuns] = useState<string[]>([]);
 
   // Task queue state
   const [topics, setTopics] = useState<string[]>([]);
@@ -48,6 +62,15 @@ export default function ServiceDetailPage() {
   const isTopicService = serviceId === 'research' || serviceId === 'topic-tracker';
   const isCodeTaskService = serviceId === 'code-task';
   const hasTaskQueue = isTopicService || isCodeTaskService;
+
+  const fetchNextRuns = useCallback(async () => {
+    try {
+      const data = await apiFetch<NextRunsResponse>(`/api/services/${serviceId}/next-runs?count=10`);
+      setNextRuns(data.nextRuns ?? []);
+    } catch {
+      setNextRuns([]);
+    }
+  }, [serviceId]);
 
   const fetchTaskQueue = useCallback(async () => {
     if (isTopicService) {
@@ -61,15 +84,20 @@ export default function ServiceDetailPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [serviceData, budgetData, logsData] = await Promise.all([
+      const [serviceData, budgetData, logsData, configData] = await Promise.all([
         apiFetch<Service>(`/api/services/${serviceId}`).catch(() => null),
         apiFetch<Budget>(`/api/budgets/${serviceId}`).catch(() => null),
         apiFetch<LogEntry[]>(`/api/logs/${serviceId}`).catch(() => []),
+        apiFetch<ServiceModelConfig>(`/api/services/${serviceId}/config`).catch(() => null),
       ]);
       setService(serviceData);
       setBudget(budgetData);
       setLogs(logsData);
+      if (configData) {
+        setModel(configData.model);
+      }
       await fetchTaskQueue();
+      await fetchNextRuns();
 
       if (serviceData?.schedule) {
         setScheduleType(serviceData.schedule.type || 'cron');
@@ -79,13 +107,27 @@ export default function ServiceDetailPage() {
         setScheduleDays(serviceData.schedule.daysOfWeek || []);
       }
 
+      // Fetch scheduled service info for cycle data
+      try {
+        const stateData = await apiFetch<{ services: ScheduledServiceInfo[] }>('/api/state');
+        const scheduledInfo = stateData.services.find(
+          (s: ScheduledServiceInfo & { serviceId?: string }) => (s as { serviceId: string }).serviceId === serviceId
+        );
+        if (scheduledInfo) {
+          setMaxCycles(scheduledInfo.maxCycles?.toString() || '');
+          setCyclesCompleted(scheduledInfo.cyclesCompleted ?? 0);
+        }
+      } catch {
+        // ignore
+      }
+
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch service data');
     } finally {
       setLoading(false);
     }
-  }, [serviceId, fetchTaskQueue]);
+  }, [serviceId, fetchTaskQueue, fetchNextRuns]);
 
   useEffect(() => {
     fetchData();
@@ -101,6 +143,19 @@ export default function ServiceDetailPage() {
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${action} service`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleModelChange = async (newModel: ClaudeModel) => {
+    setModel(newModel);
+    setActionLoading('model');
+    setError(null);
+    try {
+      await apiPut(`/api/services/${serviceId}/config`, { model: newModel });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update model');
     } finally {
       setActionLoading(null);
     }
@@ -141,6 +196,9 @@ export default function ServiceDetailPage() {
     }
     if (scheduleDays.length > 0) {
       schedulePayload.daysOfWeek = scheduleDays;
+    }
+    if (maxCycles.trim()) {
+      schedulePayload.maxCycles = parseInt(maxCycles, 10);
     }
 
     try {
@@ -334,6 +392,31 @@ export default function ServiceDetailPage() {
         </div>
       </div>
 
+      {/* Model Selection */}
+      <div className="section">
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px' }}>Model</h2>
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Claude Model
+            </label>
+            <select
+              value={model}
+              onChange={(e) => handleModelChange(e.target.value as ClaudeModel)}
+              disabled={actionLoading === 'model'}
+              style={{ width: '200px' }}
+            >
+              <option value="haiku">Haiku (Fast, Low Cost)</option>
+              <option value="sonnet">Sonnet (Balanced)</option>
+              <option value="opus">Opus (Most Capable)</option>
+            </select>
+            {actionLoading === 'model' && (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Saving...</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Task Queue */}
       {hasTaskQueue && (
         <div className="section">
@@ -498,6 +581,16 @@ export default function ServiceDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Execution History Link */}
+      <div className="section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Execution History</h2>
+          <a href={`/services/${serviceId}/runs`} className="btn btn-secondary btn-sm">
+            View All Runs
+          </a>
+        </div>
+      </div>
 
       {/* Budget Management */}
       <div className="section">
@@ -697,6 +790,33 @@ export default function ServiceDetailPage() {
               </div>
             )}
 
+            {/* Max Cycles */}
+            <div style={{ marginBottom: '16px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '0.8rem',
+                  color: 'var(--text-secondary)',
+                  marginBottom: '4px',
+                }}
+              >
+                Max Cycles (empty = unlimited)
+              </label>
+              <input
+                type="number"
+                min="1"
+                placeholder="Unlimited"
+                value={maxCycles}
+                onChange={(e) => setMaxCycles(e.target.value)}
+                style={{ width: '160px' }}
+              />
+              {cyclesCompleted > 0 && (
+                <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Cycles completed: {cyclesCompleted}{maxCycles ? ` / ${maxCycles}` : ''}
+                </div>
+              )}
+            </div>
+
             <button
               type="submit"
               className="btn btn-primary"
@@ -705,6 +825,22 @@ export default function ServiceDetailPage() {
               {actionLoading === 'schedule' ? 'Updating...' : 'Update Schedule'}
             </button>
           </form>
+
+          {/* Next Execution Times */}
+          {nextRuns.length > 0 && (
+            <div style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '8px' }}>
+                Next Scheduled Runs
+              </h3>
+              <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                {nextRuns.map((time, idx) => (
+                  <li key={idx} style={{ marginBottom: '4px' }}>
+                    {new Date(time).toLocaleString()}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       </div>
 

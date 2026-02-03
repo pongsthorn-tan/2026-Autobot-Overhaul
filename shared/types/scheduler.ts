@@ -18,6 +18,8 @@ export interface ScheduledService {
   enabled: boolean;
   lastRun: string | null;
   nextRun: string | null;
+  maxCycles?: number;
+  cyclesCompleted: number;
 }
 
 export interface SchedulerState {

@@ -21,16 +21,23 @@ export class SelfImproveService extends BaseService {
 
     const taskId = generateTaskId("self-improve", "system-optimization");
 
-    for (let i = 1; i <= this.maxIterations; i++) {
-      if (this._status !== "running") break;
+    await this.beginRun();
+    try {
+      for (let i = 1; i <= this.maxIterations; i++) {
+        if (this._status !== "running") break;
 
-      await this.runTask({
-        label: `system optimization (iteration ${i}/${this.maxIterations})`,
-        prompt: `Iteration ${i} of ${this.maxIterations}: Analyze the autobot system logs, performance metrics, and service outputs. Identify areas for improvement in prompts, workflows, or configurations. Suggest and implement concrete improvements.`,
-        maxTurns: 5,
-        iteration: i,
-        existingTaskId: taskId,
-      });
+        await this.runTask({
+          label: `system optimization (iteration ${i}/${this.maxIterations})`,
+          prompt: `Iteration ${i} of ${this.maxIterations}: Analyze the autobot system logs, performance metrics, and service outputs. Identify areas for improvement in prompts, workflows, or configurations. Suggest and implement concrete improvements.`,
+          maxTurns: 5,
+          iteration: i,
+          existingTaskId: taskId,
+        });
+      }
+      await this.completeRun("completed");
+    } catch (err) {
+      await this.completeRun("errored");
+      throw err;
     }
 
     this._status = "idle";
