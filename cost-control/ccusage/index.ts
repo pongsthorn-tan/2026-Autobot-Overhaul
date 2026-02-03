@@ -13,6 +13,8 @@ export interface CcusageSessionResult {
   totalCost: number;
 }
 
+const CCUSAGE_TIMEOUT_MS = 15_000;
+
 export class CcusageClient {
   async getSessionCost(sessionId: string): Promise<CcusageSessionResult | null> {
     try {
@@ -21,7 +23,7 @@ export class CcusageClient {
         "--json",
         "--id",
         sessionId,
-      ]);
+      ], { timeout: CCUSAGE_TIMEOUT_MS });
       const data = JSON.parse(stdout);
       const session = data.sessions?.[0];
       if (!session) return null;

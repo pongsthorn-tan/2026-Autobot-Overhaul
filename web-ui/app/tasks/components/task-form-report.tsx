@@ -25,148 +25,155 @@ interface PromptVersion {
   cost: number;
 }
 
-// ---------- Snake Mini-Game ----------
+// ---------- Simon Says Mini-Game ----------
 
-type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
-interface Pos { x: number; y: number; }
+const SIMON_COLORS = [
+  { name: 'green', idle: '#1a4a2e', active: '#22c55e', light: '#4ade80' },
+  { name: 'red', idle: '#4a1a1a', active: '#ef4444', light: '#f87171' },
+  { name: 'yellow', idle: '#4a4a1a', active: '#eab308', light: '#facc15' },
+  { name: 'blue', idle: '#1a2a4a', active: '#3b82f6', light: '#60a5fa' },
+];
 
-const GRID = 20;
-const CELL = 14;
-const TICK = 120;
+type SimonPhase = 'watching' | 'playing' | 'gameover';
 
-function SnakeGame() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dirRef = useRef<Direction>('RIGHT');
-  const snakeRef = useRef<Pos[]>([{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }]);
-  const foodRef = useRef<Pos>({ x: 15, y: 10 });
-  const scoreRef = useRef(0);
-  const gameOverRef = useRef(false);
+function SimonSaysGame() {
+  const [sequence, setSequence] = useState<number[]>([]);
+  const [playerIndex, setPlayerIndex] = useState(0);
+  const [phase, setPhase] = useState<SimonPhase>('watching');
+  const [activeColor, setActiveColor] = useState<number | null>(null);
   const [score, setScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
+  const [highScore, setHighScore] = useState(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const spawnFood = useCallback(() => {
-    const snake = snakeRef.current;
-    let pos: Pos;
-    do {
-      pos = { x: Math.floor(Math.random() * GRID), y: Math.floor(Math.random() * GRID) };
-    } while (snake.some((s) => s.x === pos.x && s.y === pos.y));
-    foodRef.current = pos;
+  const clearTimer = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
   }, []);
 
-  const resetGame = useCallback(() => {
-    snakeRef.current = [{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }];
-    dirRef.current = 'RIGHT';
-    scoreRef.current = 0;
-    gameOverRef.current = false;
-    setScore(0);
-    setGameOver(false);
-    spawnFood();
-  }, [spawnFood]);
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      const dir = dirRef.current;
-      if ((e.key === 'ArrowUp' || e.key === 'w') && dir !== 'DOWN') dirRef.current = 'UP';
-      if ((e.key === 'ArrowDown' || e.key === 's') && dir !== 'UP') dirRef.current = 'DOWN';
-      if ((e.key === 'ArrowLeft' || e.key === 'a') && dir !== 'RIGHT') dirRef.current = 'LEFT';
-      if ((e.key === 'ArrowRight' || e.key === 'd') && dir !== 'LEFT') dirRef.current = 'RIGHT';
-      if (e.key === ' ' && gameOverRef.current) resetGame();
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [resetGame]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const interval = setInterval(() => {
-      if (gameOverRef.current) return;
-
-      const snake = snakeRef.current;
-      const head = { ...snake[0] };
-      const dir = dirRef.current;
-
-      if (dir === 'UP') head.y--;
-      if (dir === 'DOWN') head.y++;
-      if (dir === 'LEFT') head.x--;
-      if (dir === 'RIGHT') head.x++;
-
-      // Wall or self collision
-      if (
-        head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID ||
-        snake.some((s) => s.x === head.x && s.y === head.y)
-      ) {
-        gameOverRef.current = true;
-        setGameOver(true);
-        return;
-      }
-
-      snake.unshift(head);
-
-      // Eat food
-      const food = foodRef.current;
-      if (head.x === food.x && head.y === food.y) {
-        scoreRef.current++;
-        setScore(scoreRef.current);
-        spawnFood();
+  const playSequence = useCallback((seq: number[]) => {
+    setPhase('watching');
+    let i = 0;
+    const playNext = () => {
+      if (i < seq.length) {
+        setActiveColor(seq[i]);
+        timeoutRef.current = setTimeout(() => {
+          setActiveColor(null);
+          i++;
+          timeoutRef.current = setTimeout(playNext, 250);
+        }, 500);
       } else {
-        snake.pop();
+        setPhase('playing');
+        setPlayerIndex(0);
       }
+    };
+    timeoutRef.current = setTimeout(playNext, 400);
+  }, []);
 
-      // Draw
-      ctx.fillStyle = '#0f1117';
-      ctx.fillRect(0, 0, GRID * CELL, GRID * CELL);
+  const startNewGame = useCallback(() => {
+    clearTimer();
+    const first = Math.floor(Math.random() * 4);
+    const newSeq = [first];
+    setSequence(newSeq);
+    setScore(0);
+    setPlayerIndex(0);
+    playSequence(newSeq);
+  }, [clearTimer, playSequence]);
 
-      // Grid lines
-      ctx.strokeStyle = '#1a1d27';
-      ctx.lineWidth = 0.5;
-      for (let i = 0; i <= GRID; i++) {
-        ctx.beginPath();
-        ctx.moveTo(i * CELL, 0);
-        ctx.lineTo(i * CELL, GRID * CELL);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(0, i * CELL);
-        ctx.lineTo(GRID * CELL, i * CELL);
-        ctx.stroke();
-      }
+  useEffect(() => {
+    startNewGame();
+    return clearTimer;
+  }, [startNewGame, clearTimer]);
 
-      // Food
-      ctx.fillStyle = '#ef4444';
-      ctx.beginPath();
-      ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL / 2 - 1, 0, Math.PI * 2);
-      ctx.fill();
+  const handlePress = (colorIndex: number) => {
+    if (phase !== 'playing') return;
 
-      // Snake
-      snake.forEach((seg, i) => {
-        ctx.fillStyle = i === 0 ? '#3b82f6' : '#22c55e';
-        ctx.fillRect(seg.x * CELL + 1, seg.y * CELL + 1, CELL - 2, CELL - 2);
-      });
-    }, TICK);
+    setActiveColor(colorIndex);
+    setTimeout(() => setActiveColor(null), 200);
 
-    return () => clearInterval(interval);
-  }, [spawnFood]);
+    if (colorIndex !== sequence[playerIndex]) {
+      setPhase('gameover');
+      setHighScore((prev) => Math.max(prev, score));
+      return;
+    }
+
+    const nextIndex = playerIndex + 1;
+    if (nextIndex >= sequence.length) {
+      const newScore = score + 1;
+      setScore(newScore);
+      const next = Math.floor(Math.random() * 4);
+      const newSeq = [...sequence, next];
+      setSequence(newSeq);
+      setPhase('watching');
+      timeoutRef.current = setTimeout(() => playSequence(newSeq), 600);
+    } else {
+      setPlayerIndex(nextIndex);
+    }
+  };
+
+  const SIZE = 120;
+  const GAP = 4;
+  const HALF = (SIZE - GAP) / 2;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-      <canvas
-        ref={canvasRef}
-        width={GRID * CELL}
-        height={GRID * CELL}
-        style={{ borderRadius: '8px', border: '1px solid var(--border-color)' }}
-      />
-      <div style={{ display: 'flex', justifyContent: 'space-between', width: GRID * CELL, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-        <span>Score: {score}</span>
-        <span>WASD or Arrow Keys</span>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `${HALF}px ${HALF}px`,
+          gap: `${GAP}px`,
+          width: SIZE,
+          height: SIZE,
+        }}
+      >
+        {SIMON_COLORS.map((c, i) => (
+          <button
+            key={c.name}
+            type="button"
+            onClick={() => handlePress(i)}
+            disabled={phase !== 'playing'}
+            style={{
+              width: HALF,
+              height: HALF,
+              borderRadius: '8px',
+              border: 'none',
+              cursor: phase === 'playing' ? 'pointer' : 'default',
+              background: activeColor === i ? c.active : c.idle,
+              boxShadow: activeColor === i ? `0 0 12px ${c.light}` : 'none',
+              transition: 'background 0.1s, box-shadow 0.1s',
+            }}
+          />
+        ))}
       </div>
-      {gameOver && (
-        <div style={{ fontSize: '0.85rem', color: 'var(--accent-yellow)' }}>
-          Game Over! Press Space to restart
-        </div>
-      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', width: SIZE, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+        <span>Score: {score}</span>
+        <span>Best: {highScore}</span>
+      </div>
+      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+        {phase === 'watching' && 'Watch the pattern...'}
+        {phase === 'playing' && 'Your turn! Repeat the pattern'}
+        {phase === 'gameover' && (
+          <span>
+            Wrong!{' '}
+            <button
+              type="button"
+              onClick={startNewGame}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--accent-blue)',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                fontSize: '0.7rem',
+                padding: 0,
+              }}
+            >
+              Play again
+            </button>
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -398,46 +405,122 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
     );
   }
 
-  // Step: refining — async polling with mini-game
+  // Step: refining — async polling with mini-game + process detail
   if (step === 'refining') {
     const mins = Math.floor(elapsedSeconds / 60);
     const secs = elapsedSeconds % 60;
     const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 
+    // Phase detail based on elapsed time
+    const isWarning = elapsedSeconds >= 120;
+    const phaseLabel =
+      elapsedSeconds < 5 ? 'Spawning Claude CLI...' :
+      elapsedSeconds < 15 ? 'Claude is reading your prompt...' :
+      elapsedSeconds < 60 ? 'Claude is refining...' :
+      elapsedSeconds < 120 ? 'Still working, almost there...' :
+      'Taking longer than expected — something may be wrong';
+
+    // Progress steps
+    const steps = [
+      { label: 'Start job', done: elapsedSeconds >= 1 },
+      { label: 'Spawn Claude', done: elapsedSeconds >= 5 },
+      { label: 'Refine prompt', done: false },
+      { label: 'Calculate cost', done: false },
+    ];
+
     return (
       <div style={{ padding: '16px 0' }}>
-        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '4px' }}>
-            Refining your prompt...
-          </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            Claude is thinking ({timeStr}) — play a game while you wait!
-          </div>
-        </div>
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+          {/* Left: status detail */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '4px' }}>
+              Refining your prompt...
+            </div>
+            <div style={{ fontSize: '0.85rem', color: isWarning ? 'var(--accent-yellow)' : 'var(--text-secondary)', marginBottom: '12px' }}>
+              {phaseLabel}
+            </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          <SnakeGame />
-        </div>
+            {/* Process steps */}
+            <div style={{ marginBottom: '16px' }}>
+              {steps.map((s, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.8rem' }}>
+                  <span style={{ width: '16px', textAlign: 'center', color: s.done ? 'var(--accent-green, #22c55e)' : 'var(--text-secondary)' }}>
+                    {s.done ? '\u2713' : '\u00B7'}
+                  </span>
+                  <span style={{ color: s.done ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                    {s.label}
+                  </span>
+                </div>
+              ))}
+            </div>
 
-        <div style={{ textAlign: 'center' }}>
-          <div
-            style={{
-              display: 'inline-block',
-              width: '200px',
-              height: '3px',
-              background: 'var(--bg-tertiary)',
-              borderRadius: '2px',
-              overflow: 'hidden',
-            }}
-          >
+            {/* Timer */}
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+              Elapsed: {timeStr}
+            </div>
+
+            {/* Progress bar */}
             <div
               style={{
-                height: '100%',
-                background: 'var(--accent-blue)',
+                width: '100%',
+                maxWidth: '240px',
+                height: '3px',
+                background: 'var(--bg-tertiary)',
                 borderRadius: '2px',
-                animation: 'pulse-bar 2s ease-in-out infinite',
+                overflow: 'hidden',
               }}
-            />
+            >
+              <div
+                style={{
+                  height: '100%',
+                  background: isWarning ? 'var(--accent-yellow, #eab308)' : 'var(--accent-blue)',
+                  borderRadius: '2px',
+                  animation: 'pulse-bar 2s ease-in-out infinite',
+                }}
+              />
+            </div>
+
+            {/* Warning message */}
+            {isWarning && (
+              <div style={{
+                marginTop: '12px',
+                padding: '8px 12px',
+                background: 'rgba(234, 179, 8, 0.1)',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                borderRadius: '6px',
+                fontSize: '0.78rem',
+                color: 'var(--accent-yellow, #eab308)',
+              }}>
+                This is taking unusually long. The Claude CLI process or cost
+                calculation may be stuck. You can wait or go back and try the
+                Faster (OpenAI) provider instead.
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      if (pollRef.current) clearInterval(pollRef.current);
+                      if (timerRef.current) clearInterval(timerRef.current);
+                      pollRef.current = null;
+                      timerRef.current = null;
+                      setRefineError('Cancelled — refinement was taking too long');
+                      setStep(promptHistory.length > 0 ? 'review' : 'input');
+                    }}
+                    style={{ fontSize: '0.75rem' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right: mini-game */}
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '6px' }}>
+              Play while you wait
+            </div>
+            <SimonSaysGame />
           </div>
         </div>
 

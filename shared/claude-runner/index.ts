@@ -86,7 +86,7 @@ export async function spawnClaudeTask(
   });
 
   // Wait briefly for session file to flush
-  await new Promise((r) => setTimeout(r, 1500));
+  await new Promise((r) => setTimeout(r, 500));
 
   const afterFiles = await listJsonlFiles(sessionDir);
   const newFiles = afterFiles.filter((f) => !beforeFiles.includes(f));

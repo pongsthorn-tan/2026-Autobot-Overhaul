@@ -3,8 +3,8 @@ services:
     build:
       context: .
       args:
-        - BUILD_TAG=20260203-2128
-    image: e-autobot:20260203-2128
+        - BUILD_TAG=20260203-2138
+    image: e-autobot:20260203-2138
     container_name: autobot
     restart: unless-stopped
     ports:
@@ -29,7 +29,7 @@ services:
     build:
       context: .
       dockerfile: nginx.Dockerfile
-    image: e-autobot-nginx:20260203-2128
+    image: e-autobot-nginx:20260203-2138
     container_name: autobot-nginx
     restart: unless-stopped
     ports:
