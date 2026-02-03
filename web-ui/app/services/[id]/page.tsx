@@ -12,6 +12,7 @@ import {
   type ClaudeModel,
   type ServiceModelConfig,
   type NextRunsResponse,
+  type ScheduleSlot,
 } from '../../lib/api';
 
 interface ScheduledServiceInfo {
@@ -37,11 +38,8 @@ export default function ServiceDetailPage() {
   const [budgetAmount, setBudgetAmount] = useState('');
 
   // Schedule form
-  const [scheduleType, setScheduleType] = useState('cron');
-  const [scheduleExpression, setScheduleExpression] = useState('');
-  const [scheduleInterval, setScheduleInterval] = useState('');
-  const [scheduleTimeOfDay, setScheduleTimeOfDay] = useState('');
-  const [scheduleDays, setScheduleDays] = useState<string[]>([]);
+  const [scheduleMode, setScheduleMode] = useState<'once' | 'scheduled'>('once');
+  const [slots, setSlots] = useState<ScheduleSlot[]>([{ timeOfDay: '09:00', daysOfWeek: [1, 2, 3, 4, 5] }]);
   const [maxCycles, setMaxCycles] = useState('');
   const [cyclesCompleted, setCyclesCompleted] = useState(0);
   const [nextRuns, setNextRuns] = useState<string[]>([]);
@@ -73,11 +71,19 @@ export default function ServiceDetailPage() {
       await fetchNextRuns();
 
       if (serviceData?.schedule) {
-        setScheduleType(serviceData.schedule.type || 'cron');
-        setScheduleExpression(serviceData.schedule.expression || '');
-        setScheduleInterval(serviceData.schedule.interval?.toString() || '');
-        setScheduleTimeOfDay(serviceData.schedule.timeOfDay || '');
-        setScheduleDays(serviceData.schedule.daysOfWeek || []);
+        // Convert existing weekly schedule into slot format
+        if (serviceData.schedule.type === 'weekly' || serviceData.schedule.type === 'daily') {
+          setScheduleMode('scheduled');
+          const daysOfWeek = (serviceData.schedule.daysOfWeek || []).map((d) =>
+            typeof d === 'string' ? ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(d.toLowerCase()) : Number(d)
+          ).filter((d) => d >= 0);
+          setSlots([{
+            timeOfDay: serviceData.schedule.timeOfDay || '09:00',
+            daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek : [1, 2, 3, 4, 5],
+          }]);
+        } else if (serviceData.schedule.type) {
+          setScheduleMode('scheduled');
+        }
       }
 
       // Fetch scheduled service info for cycle data
@@ -157,18 +163,13 @@ export default function ServiceDetailPage() {
     setActionLoading('schedule');
     setError(null);
 
-    const schedulePayload: Record<string, unknown> = { type: scheduleType };
-    if (scheduleType === 'cron' && scheduleExpression) {
-      schedulePayload.expression = scheduleExpression;
-    }
-    if (scheduleType === 'cycle' && scheduleInterval) {
-      schedulePayload.interval = parseInt(scheduleInterval, 10);
-    }
-    if (scheduleType === 'time-of-day' && scheduleTimeOfDay) {
-      schedulePayload.timeOfDay = scheduleTimeOfDay;
-    }
-    if (scheduleDays.length > 0) {
-      schedulePayload.daysOfWeek = scheduleDays;
+    const schedulePayload: Record<string, unknown> = {};
+    if (scheduleMode === 'scheduled') {
+      schedulePayload.type = 'scheduled';
+      schedulePayload.slots = slots;
+    } else {
+      // For "once" mode, send a simple weekly schedule that's effectively disabled
+      schedulePayload.type = 'once';
     }
     if (maxCycles.trim()) {
       schedulePayload.maxCycles = parseInt(maxCycles, 10);
@@ -184,10 +185,27 @@ export default function ServiceDetailPage() {
     }
   };
 
-  const toggleDay = (day: string) => {
-    setScheduleDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+  const updateSlot = (index: number, update: Partial<ScheduleSlot>) => {
+    const updated = slots.map((slot, i) =>
+      i === index ? { ...slot, ...update } : slot
     );
+    setSlots(updated);
+  };
+
+  const toggleSlotDay = (index: number, day: number) => {
+    const slot = slots[index];
+    const days = slot.daysOfWeek.includes(day)
+      ? slot.daysOfWeek.filter((d) => d !== day)
+      : [...slot.daysOfWeek, day];
+    updateSlot(index, { daysOfWeek: days });
+  };
+
+  const addSlot = () => {
+    setSlots([...slots, { timeOfDay: '09:00', daysOfWeek: [1, 2, 3, 4, 5] }]);
+  };
+
+  const removeSlot = (index: number) => {
+    setSlots(slots.filter((_, i) => i !== index));
   };
 
   const getStatusBadgeClass = (status: string): string => {
@@ -195,6 +213,8 @@ export default function ServiceDetailPage() {
       case 'active':
       case 'running':
         return 'badge badge-active';
+      case 'idle':
+        return 'badge badge-idle';
       case 'paused':
         return 'badge badge-paused';
       case 'stopped':
@@ -206,7 +226,15 @@ export default function ServiceDetailPage() {
     }
   };
 
-  const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const allDays = [
+    { label: 'SUN', value: 0 },
+    { label: 'MON', value: 1 },
+    { label: 'TUE', value: 2 },
+    { label: 'WED', value: 3 },
+    { label: 'THU', value: 4 },
+    { label: 'FRI', value: 5 },
+    { label: 'SAT', value: 6 },
+  ];
 
   if (loading) {
     return (
@@ -433,119 +461,80 @@ export default function ServiceDetailPage() {
         <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px' }}>Schedule</h2>
         <div className="card">
           <form onSubmit={handleUpdateSchedule}>
-            <div style={{ marginBottom: '16px' }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '0.8rem',
-                  color: 'var(--text-secondary)',
-                  marginBottom: '4px',
-                }}
-              >
-                Schedule Type
+            {/* Schedule mode radio */}
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                <input
+                  type="radio"
+                  name="serviceScheduleMode"
+                  checked={scheduleMode === 'once'}
+                  onChange={() => setScheduleMode('once')}
+                />
+                Run Once
               </label>
-              <select
-                value={scheduleType}
-                onChange={(e) => setScheduleType(e.target.value)}
-                style={{ width: '200px' }}
-              >
-                <option value="cron">Cron Expression</option>
-                <option value="cycle">Recurring Cycle (ms)</option>
-                <option value="time-of-day">Time of Day</option>
-                <option value="day-of-week">Day of Week</option>
-              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                <input
+                  type="radio"
+                  name="serviceScheduleMode"
+                  checked={scheduleMode === 'scheduled'}
+                  onChange={() => setScheduleMode('scheduled')}
+                />
+                Run by Schedule
+              </label>
             </div>
 
-            {scheduleType === 'cron' && (
-              <div style={{ marginBottom: '16px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.8rem',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '4px',
-                  }}
+            {scheduleMode === 'scheduled' && (
+              <div style={{ paddingLeft: '8px', borderLeft: '2px solid var(--border)', marginBottom: '16px' }}>
+                {slots.map((slot, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      marginBottom: '10px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <input
+                      type="time"
+                      value={slot.timeOfDay}
+                      onChange={(e) => updateSlot(index, { timeOfDay: e.target.value })}
+                      style={{ width: '120px' }}
+                    />
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {allDays.map((day) => (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => toggleSlotDay(index, day.value)}
+                          className={slot.daysOfWeek.includes(day.value) ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                          style={{ minWidth: '38px', padding: '2px 6px', fontSize: '0.7rem' }}
+                        >
+                          {day.label}
+                        </button>
+                      ))}
+                    </div>
+                    {slots.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeSlot(index)}
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '2px 8px', fontSize: '0.75rem', color: 'var(--accent-red)' }}
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addSlot}
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: '0.75rem' }}
                 >
-                  Cron Expression
-                </label>
-                <input
-                  type="text"
-                  placeholder="*/5 * * * *"
-                  value={scheduleExpression}
-                  onChange={(e) => setScheduleExpression(e.target.value)}
-                  style={{ width: '300px' }}
-                />
-              </div>
-            )}
-
-            {scheduleType === 'cycle' && (
-              <div style={{ marginBottom: '16px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.8rem',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '4px',
-                  }}
-                >
-                  Interval (milliseconds)
-                </label>
-                <input
-                  type="number"
-                  min="1000"
-                  placeholder="60000"
-                  value={scheduleInterval}
-                  onChange={(e) => setScheduleInterval(e.target.value)}
-                  style={{ width: '200px' }}
-                />
-              </div>
-            )}
-
-            {scheduleType === 'time-of-day' && (
-              <div style={{ marginBottom: '16px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.8rem',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '4px',
-                  }}
-                >
-                  Time (HH:MM)
-                </label>
-                <input
-                  type="time"
-                  value={scheduleTimeOfDay}
-                  onChange={(e) => setScheduleTimeOfDay(e.target.value)}
-                  style={{ width: '160px' }}
-                />
-              </div>
-            )}
-
-            {(scheduleType === 'day-of-week' || scheduleType === 'time-of-day') && (
-              <div style={{ marginBottom: '16px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.8rem',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '8px',
-                  }}
-                >
-                  Days of Week
-                </label>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {allDays.map((day) => (
-                    <button
-                      key={day}
-                      type="button"
-                      onClick={() => toggleDay(day)}
-                      className={scheduleDays.includes(day) ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-                    >
-                      {day.slice(0, 3).toUpperCase()}
-                    </button>
-                  ))}
-                </div>
+                  + Add Time Slot
+                </button>
               </div>
             )}
 

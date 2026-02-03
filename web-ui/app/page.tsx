@@ -47,6 +47,8 @@ export default function DashboardPage() {
       case 'active':
       case 'running':
         return 'badge badge-active';
+      case 'idle':
+        return 'badge badge-idle';
       case 'paused':
         return 'badge badge-paused';
       case 'stopped':
@@ -126,7 +128,7 @@ export default function DashboardPage() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        marginBottom: '12px',
+                        marginBottom: service.description ? '4px' : '12px',
                       }}
                     >
                       <span style={{ fontWeight: 600, fontSize: '1rem' }}>
@@ -136,6 +138,11 @@ export default function DashboardPage() {
                         {service.status}
                       </span>
                     </div>
+                    {service.description && (
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: 1.4 }}>
+                        {service.description}
+                      </div>
+                    )}
 
                     {budget && (
                       <>

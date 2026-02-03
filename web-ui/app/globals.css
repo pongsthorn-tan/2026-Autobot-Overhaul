@@ -114,6 +114,11 @@ a:hover {
   color: var(--accent-yellow);
 }
 
+.badge-idle {
+  background: rgba(99, 179, 237, 0.15);
+  color: #63b3ed;
+}
+
 .badge-stopped {
   background: rgba(107, 114, 128, 0.15);
   color: var(--text-muted);

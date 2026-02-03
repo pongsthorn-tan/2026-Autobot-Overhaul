@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { StandaloneTask, CreateTaskInput, TaskServiceType } from "../../shared/types/task.js";
-import { Schedule } from "../../shared/types/scheduler.js";
+import { Schedule, ScheduleConfig, ScheduleSlot } from "../../shared/types/scheduler.js";
 import { TaskStore } from "../../shared/task-store/index.js";
 import { ServiceRegistry } from "../registry/index.js";
 import { SchedulingEngine } from "../engine/index.js";
@@ -59,14 +59,14 @@ export class TaskExecutor {
     });
 
     // If a schedule is provided, also set up recurring execution
-    if (input.schedule) {
-      this.scheduleTask(taskId, input.schedule);
+    if (input.schedule && input.schedule.type === "scheduled") {
+      this.scheduleTaskSlots(taskId, input.schedule.slots);
     }
 
     return { ...task, status: "running" };
   }
 
-  async createAndSchedule(input: CreateTaskInput, schedule: Schedule): Promise<StandaloneTask> {
+  async createAndSchedule(input: CreateTaskInput, schedule: ScheduleConfig): Promise<StandaloneTask> {
     const taskId = uuidv4();
     const budgetKey = `task:${taskId}`;
 
@@ -87,7 +87,10 @@ export class TaskExecutor {
 
     await this.budgetManager.allocate(budgetKey, input.budget);
     await this.taskStore.create(task);
-    this.scheduleTask(taskId, schedule);
+
+    if (schedule.type === "scheduled") {
+      this.scheduleTaskSlots(taskId, schedule.slots);
+    }
 
     return task;
   }
@@ -104,16 +107,18 @@ export class TaskExecutor {
   }
 
   async deleteTask(taskId: string): Promise<void> {
-    const key = `task:${taskId}`;
-    this.engine.unscheduleCallback(key);
+    // Unschedule all possible slot keys
+    for (let i = 0; i < 10; i++) {
+      this.engine.unscheduleCallback(`task:${taskId}:slot-${i}`);
+    }
     await this.taskStore.delete(taskId);
   }
 
   async reloadScheduledTasks(): Promise<void> {
     const tasks = await this.taskStore.getAll();
     for (const task of tasks) {
-      if (task.schedule && task.status === "scheduled") {
-        this.scheduleTask(task.taskId, task.schedule);
+      if (task.schedule && task.status === "scheduled" && task.schedule.type === "scheduled") {
+        this.scheduleTaskSlots(task.taskId, task.schedule.slots);
       }
     }
     logger.info("Reloaded scheduled tasks", {
@@ -121,10 +126,18 @@ export class TaskExecutor {
     });
   }
 
-  private scheduleTask(taskId: string, schedule: Schedule): void {
-    const key = `task:${taskId}`;
-    this.engine.scheduleCallback(key, schedule, async () => {
-      await this.executeTask(taskId, key);
+  private scheduleTaskSlots(taskId: string, slots: ScheduleSlot[]): void {
+    const budgetKey = `task:${taskId}`;
+    slots.forEach((slot, i) => {
+      const key = `task:${taskId}:slot-${i}`;
+      const schedule: Schedule = {
+        type: "weekly",
+        timeOfDay: slot.timeOfDay,
+        daysOfWeek: slot.daysOfWeek,
+      };
+      this.engine.scheduleCallback(key, schedule, async () => {
+        await this.executeTask(taskId, budgetKey);
+      });
     });
   }
 

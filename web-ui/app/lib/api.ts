@@ -41,13 +41,14 @@ export function apiDelete<T>(path: string): Promise<T> {
 export interface Service {
   id: string;
   name: string;
-  status: 'active' | 'running' | 'paused' | 'stopped' | 'errored';
+  description?: string;
+  status: 'active' | 'running' | 'paused' | 'stopped' | 'errored' | 'idle';
   schedule?: {
     type: string;
     expression?: string;
     interval?: number;
     timeOfDay?: string;
-    daysOfWeek?: string[];
+    daysOfWeek?: string[] | number[];
   };
   lastRun?: string;
   nextRun?: string;
@@ -167,4 +168,27 @@ export function listTasks(serviceType?: string): Promise<StandaloneTask[]> {
 
 export function deleteTask(taskId: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`/api/tasks/${taskId}`);
+}
+
+// Schedule types
+
+export interface ScheduleSlot {
+  timeOfDay: string;    // "HH:MM"
+  daysOfWeek: number[]; // 0=Sun..6=Sat
+}
+
+export type ScheduleConfig =
+  | { type: 'once' }
+  | { type: 'scheduled'; slots: ScheduleSlot[] };
+
+// Prompt refinement
+
+export interface RefinePromptResponse {
+  refinedPrompt: string;
+  cost: number;
+  sessionId: string;
+}
+
+export function refinePrompt(prompt: string, model: ClaudeModel): Promise<RefinePromptResponse> {
+  return apiPost<RefinePromptResponse>('/api/tasks/refine-prompt', { prompt, model });
 }

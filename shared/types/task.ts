@@ -1,5 +1,5 @@
 import { ClaudeModel } from "./service.js";
-import { Schedule } from "./scheduler.js";
+import { Schedule, ScheduleConfig } from "./scheduler.js";
 
 export type StandaloneTaskStatus = "pending" | "scheduled" | "running" | "completed" | "errored";
 export type TaskServiceType = "report" | "research" | "code-task" | "topic-tracker" | "self-improve";
@@ -44,7 +44,7 @@ export interface StandaloneTask {
   params: TaskParams;
   model: ClaudeModel;
   budget: number;
-  schedule?: Schedule;
+  schedule?: ScheduleConfig;
   status: StandaloneTaskStatus;
   createdAt: string;
   startedAt: string | null;
@@ -59,5 +59,5 @@ export interface CreateTaskInput {
   model: ClaudeModel;
   budget: number;
   runNow: boolean;
-  schedule?: Schedule;
+  schedule?: ScheduleConfig;
 }

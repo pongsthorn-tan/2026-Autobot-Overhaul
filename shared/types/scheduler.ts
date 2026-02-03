@@ -11,6 +11,15 @@ export interface Schedule {
   cron?: string;
 }
 
+export interface ScheduleSlot {
+  timeOfDay: string;    // "HH:MM"
+  daysOfWeek: number[]; // 0=Sun..6=Sat
+}
+
+export type ScheduleConfig =
+  | { type: "once" }
+  | { type: "scheduled"; slots: ScheduleSlot[] };
+
 export interface ScheduledService {
   serviceId: string;
   schedule: Schedule;

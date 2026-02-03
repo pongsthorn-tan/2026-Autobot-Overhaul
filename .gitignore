@@ -41,8 +41,8 @@ secrets.json
 # Data persistence
 data/*.json
 
-# Task working directories
-tasks/
+# Task working directories (root-level only, not web-ui/app/tasks/)
+/tasks/
 
 # Next.js
 .next/

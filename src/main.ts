@@ -19,6 +19,9 @@ import { SelfImproveService } from "../services/self-improve/index.js";
 import { BaseService } from "../services/base-service.js";
 import { ClaudeModel } from "../shared/types/service.js";
 import { CreateTaskInput } from "../shared/types/task.js";
+import { Schedule, ScheduleConfig, ScheduleSlot } from "../shared/types/scheduler.js";
+import { spawnClaudeTask } from "../shared/claude-runner/index.js";
+import { v4 as uuidv4 } from "uuid";
 import { createServer } from "http";
 
 const logger = createLogger("system");
@@ -87,6 +90,8 @@ async function main(): Promise<void> {
     bus,
     config,
     taskExecutor,
+    costTracker,
+    budgetManager,
   };
 
   (globalThis as Record<string, unknown>).__autobot = autobot;
@@ -173,6 +178,8 @@ interface AutobotContext {
   bus: EventEmitterBus;
   config: ReturnType<typeof loadConfig>;
   taskExecutor: TaskExecutor;
+  costTracker: CostTracker;
+  budgetManager: BudgetManager;
 }
 
 async function handleRoute(
@@ -184,6 +191,42 @@ async function handleRoute(
   const pathname = url.pathname;
 
   // Task routes: /api/tasks
+  // Refine prompt endpoint (must be before taskDetailMatch regex)
+  if (pathname === "/api/tasks/refine-prompt" && method === "POST") {
+    const prompt = String(body.prompt || "").trim();
+    const model = (body.model as ClaudeModel) || "sonnet";
+    if (!prompt) throw new Error("Missing 'prompt' field");
+
+    const refinementId = uuidv4();
+    const budgetKey = `refine:${refinementId}`;
+    const workingDir = `tasks/refinements/${refinementId}`;
+
+    await ctx.budgetManager.allocate(budgetKey, 0.5);
+
+    const result = await spawnClaudeTask({
+      prompt: `Refine this rough description into a clear, detailed report prompt. Output ONLY the refined prompt, nothing else.\n\n${prompt}`,
+      workingDir,
+      maxTurns: 1,
+      model,
+    });
+
+    await ctx.costTracker.captureAndRecordCost({
+      serviceId: budgetKey,
+      taskId: refinementId,
+      taskLabel: "prompt-refinement",
+      iteration: 1,
+      sessionId: result.sessionId,
+    });
+    const budget = await ctx.budgetManager.getBudget(budgetKey);
+    const cost = budget?.spent ?? 0;
+
+    return {
+      refinedPrompt: result.stdout.trim(),
+      cost,
+      sessionId: result.sessionId,
+    };
+  }
+
   const taskDetailMatch = pathname.match(/^\/api\/tasks\/([^/]+)$/);
   if (pathname === "/api/tasks" && method === "POST") {
     const input = body as unknown as CreateTaskInput;
@@ -206,8 +249,8 @@ async function handleRoute(
     if (runNow) {
       const task = await ctx.taskExecutor.createAndRun(taskInput);
       return task;
-    } else if (input.schedule) {
-      const task = await ctx.taskExecutor.createAndSchedule(taskInput, input.schedule);
+    } else if (input.schedule && input.schedule.type === "scheduled") {
+      const task = await ctx.taskExecutor.createAndSchedule(taskInput, input.schedule as ScheduleConfig);
       return task;
     } else {
       throw new Error("Must either runNow or provide a schedule");
@@ -371,11 +414,45 @@ async function handleRoute(
     }
     if (action === "schedule" && method === "PUT") {
       const maxCycles = body.maxCycles ? Number(body.maxCycles) : undefined;
+
+      // New ScheduleConfig format with slots
+      if (body.type === "scheduled" && Array.isArray(body.slots)) {
+        const slots = body.slots as ScheduleSlot[];
+        // Unschedule existing slot keys
+        for (let i = 0; i < 10; i++) {
+          ctx.engine.unscheduleCallback(`${serviceId}-slot-${i}`);
+        }
+
+        if (slots.length > 0) {
+          // First slot uses the primary service schedule
+          const firstSlotSchedule: Schedule = {
+            type: "weekly",
+            timeOfDay: slots[0].timeOfDay,
+            daysOfWeek: slots[0].daysOfWeek,
+          };
+          await ctx.schedulerAPI.updateSchedule(serviceId, firstSlotSchedule, maxCycles);
+
+          // Additional slots as separate callbacks
+          for (let i = 1; i < slots.length; i++) {
+            const slotSchedule: Schedule = {
+              type: "weekly",
+              timeOfDay: slots[i].timeOfDay,
+              daysOfWeek: slots[i].daysOfWeek,
+            };
+            ctx.engine.scheduleCallback(`${serviceId}-slot-${i}`, slotSchedule, async () => {
+              await ctx.schedulerAPI.startService(serviceId);
+            });
+          }
+        }
+        return { ok: true, serviceId, action: "scheduled" };
+      }
+
+      // Legacy format fallback
       const schedule = { ...body } as Record<string, unknown>;
       delete schedule.maxCycles;
       await ctx.schedulerAPI.updateSchedule(
         serviceId,
-        schedule as unknown as import("../shared/types/scheduler.js").Schedule,
+        schedule as unknown as Schedule,
         maxCycles,
       );
       return { ok: true, serviceId, action: "scheduled" };
