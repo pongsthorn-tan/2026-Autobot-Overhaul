@@ -3,8 +3,8 @@ services:
     build:
       context: .
       args:
-        - BUILD_TAG=20260203-1654
-    image: e-autobot:20260203-1654
+        - BUILD_TAG=20260203-1752
+    image: e-autobot:20260203-1752
     container_name: autobot
     restart: unless-stopped
     ports:
@@ -18,16 +18,18 @@ services:
       - NEXT_PUBLIC_API_URL=https://e-autobot.pongsthorn.xyz/api
       - DEFAULT_SERVICE_BUDGET=10.00
       - BUDGET_ALERT_THRESHOLD=0.8
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - autobot-data:/app/data
       - autobot-logs:/app/logs
       - autobot-tasks:/app/tasks
+      - ~/.claude:/root/.claude
 
   nginx:
     build:
       context: .
       dockerfile: nginx.Dockerfile
-    image: e-autobot-nginx:20260203-1654
+    image: e-autobot-nginx:20260203-1752
     container_name: autobot-nginx
     restart: unless-stopped
     ports:

@@ -45,6 +45,9 @@ COPY --from=backend-build /app/dist/ ./dist/
 COPY --from=webui-build /app/web-ui/.next/standalone ./web-ui-standalone/
 COPY --from=webui-build /app/web-ui/.next/static ./web-ui-standalone/.next/static
 
+# Install Claude CLI
+RUN npm install -g @anthropic-ai/claude-code
+
 # Copy scripts
 COPY scripts/ ./scripts/
 

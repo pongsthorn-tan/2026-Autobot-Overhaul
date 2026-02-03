@@ -23,8 +23,29 @@ import { Schedule, ScheduleConfig, ScheduleSlot } from "../shared/types/schedule
 import { spawnClaudeTask } from "../shared/claude-runner/index.js";
 import { v4 as uuidv4 } from "uuid";
 import { createServer } from "http";
+import OpenAI from "openai";
 
 const logger = createLogger("system");
+
+// In-memory job store for async refinement jobs
+interface RefineJob {
+  status: "running" | "completed" | "errored";
+  refinedPrompt?: string;
+  cost?: number;
+  sessionId?: string;
+  error?: string;
+  createdAt: number;
+}
+
+const refineJobs = new Map<string, RefineJob>();
+
+// Clean up jobs older than 30 minutes every 5 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [id, job] of refineJobs) {
+    if (job.createdAt < cutoff) refineJobs.delete(id);
+  }
+}, 5 * 60 * 1000);
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -191,39 +212,105 @@ async function handleRoute(
   const pathname = url.pathname;
 
   // Task routes: /api/tasks
-  // Refine prompt endpoint (must be before taskDetailMatch regex)
+  // Refine prompt: start async job (Claude) or sync call (OpenAI)
   if (pathname === "/api/tasks/refine-prompt" && method === "POST") {
     const prompt = String(body.prompt || "").trim();
-    const model = (body.model as ClaudeModel) || "sonnet";
+    const provider = String(body.provider || "claude") as "claude" | "openai";
+    const model = String(body.model || "sonnet");
     if (!prompt) throw new Error("Missing 'prompt' field");
 
-    const refinementId = uuidv4();
-    const budgetKey = `refine:${refinementId}`;
-    const workingDir = `tasks/refinements/${refinementId}`;
+    const systemPrompt =
+      "Refine this rough description into a clear, detailed report prompt. Output ONLY the refined prompt, nothing else.";
 
-    await ctx.budgetManager.allocate(budgetKey, 0.5);
+    // OpenAI: synchronous path — call API directly and return result
+    if (provider === "openai") {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
 
-    const result = await spawnClaudeTask({
-      prompt: `Refine this rough description into a clear, detailed report prompt. Output ONLY the refined prompt, nothing else.\n\n${prompt}`,
-      workingDir,
-      maxTurns: 1,
-      model,
+      const openai = new OpenAI({ apiKey });
+      const completion = await openai.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: 4096,
+      });
+
+      const refinedPrompt = completion.choices[0]?.message?.content?.trim() ?? "";
+      const usage = completion.usage;
+      const promptTokens = usage?.prompt_tokens ?? 0;
+      const completionTokens = usage?.completion_tokens ?? 0;
+
+      // Estimate cost based on model (per 1M tokens pricing)
+      const OPENAI_PRICING: Record<string, { input: number; output: number }> = {
+        "gpt-5-mini": { input: 1.50, output: 6.00 },
+        "gpt-5": { input: 10.00, output: 30.00 },
+        "gpt-5-pro": { input: 30.00, output: 120.00 },
+      };
+      const pricing = OPENAI_PRICING[model] ?? { input: 10.0, output: 30.0 };
+      const cost =
+        (promptTokens / 1_000_000) * pricing.input +
+        (completionTokens / 1_000_000) * pricing.output;
+
+      return { provider: "openai", refinedPrompt, cost };
+    }
+
+    // Claude: async job pattern (existing behavior)
+    const jobId = uuidv4();
+    refineJobs.set(jobId, { status: "running", createdAt: Date.now() });
+
+    const budgetKey = `refine:${jobId}`;
+    const workingDir = `tasks/refinements/${jobId}`;
+
+    ctx.budgetManager.allocate(budgetKey, 0.5).then(() =>
+      spawnClaudeTask({
+        prompt: `${systemPrompt}\n\n${prompt}`,
+        workingDir,
+        maxTurns: 1,
+        model: model as ClaudeModel,
+      })
+    ).then(async (result) => {
+      await ctx.costTracker.captureAndRecordCost({
+        serviceId: budgetKey,
+        taskId: jobId,
+        taskLabel: "prompt-refinement",
+        iteration: 1,
+        sessionId: result.sessionId,
+      });
+      const budget = await ctx.budgetManager.getBudget(budgetKey);
+      const cost = budget?.spent ?? 0;
+      refineJobs.set(jobId, {
+        status: "completed",
+        refinedPrompt: result.stdout.trim(),
+        cost,
+        sessionId: result.sessionId,
+        createdAt: Date.now(),
+      });
+    }).catch((err) => {
+      refineJobs.set(jobId, {
+        status: "errored",
+        error: err instanceof Error ? err.message : String(err),
+        createdAt: Date.now(),
+      });
     });
 
-    await ctx.costTracker.captureAndRecordCost({
-      serviceId: budgetKey,
-      taskId: refinementId,
-      taskLabel: "prompt-refinement",
-      iteration: 1,
-      sessionId: result.sessionId,
-    });
-    const budget = await ctx.budgetManager.getBudget(budgetKey);
-    const cost = budget?.spent ?? 0;
+    return { provider: "claude", jobId };
+  }
 
+  // Refine prompt: poll job status
+  const refineJobMatch = pathname.match(/^\/api\/tasks\/refine-prompt\/([^/]+)$/);
+  if (refineJobMatch && method === "GET") {
+    const jobId = refineJobMatch[1];
+    const job = refineJobs.get(jobId);
+    if (!job) throw new Error("Job not found");
     return {
-      refinedPrompt: result.stdout.trim(),
-      cost,
-      sessionId: result.sessionId,
+      jobId,
+      status: job.status,
+      refinedPrompt: job.refinedPrompt,
+      cost: job.cost,
+      sessionId: job.sessionId,
+      error: job.error,
     };
   }
 
