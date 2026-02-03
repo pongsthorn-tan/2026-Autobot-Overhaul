@@ -69,6 +69,4 @@ EXPOSE 7600 7601
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-USER autobot
-
 ENTRYPOINT ["/docker-entrypoint.sh"]

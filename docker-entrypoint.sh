@@ -1,15 +1,17 @@
 #!/bin/sh
 set -e
 
+# Fix volume ownership (volumes may have been created as root)
+chown -R autobot:autobot /app/data /app/logs /app/tasks 2>/dev/null || true
+
+# Run app as non-root user (Claude CLI requires non-root)
 echo "Starting Autobot API server on port ${WEB_UI_PORT:-7600}..."
-node dist/src/main.js &
+su -s /bin/sh autobot -c "node /app/dist/src/main.js" &
 API_PID=$!
 
 echo "Starting Autobot Web UI on port ${WEBUI_PORT:-7601}..."
-cd /app/web-ui-standalone
-HOSTNAME=0.0.0.0 PORT=${WEBUI_PORT:-7601} node server.js &
+su -s /bin/sh autobot -c "cd /app/web-ui-standalone && HOSTNAME=0.0.0.0 PORT=${WEBUI_PORT:-7601} node server.js" &
 WEBUI_PID=$!
-cd /app
 
 # Handle graceful shutdown
 cleanup() {
