@@ -83,7 +83,7 @@ async function main(): Promise<void> {
 
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (method === "OPTIONS") {
@@ -165,6 +165,60 @@ async function handleRoute(
   // GET /api/services
   if (pathname === "/api/services" && method === "GET") {
     return ctx.schedulerAPI.listServices();
+  }
+
+  // Service input routes: /api/services/research/topics
+  if (pathname === "/api/services/research/topics") {
+    const service = ctx.registry.get("research") as ResearchService | undefined;
+    if (!service) throw new NotFoundError("Service not found: research");
+    if (method === "GET") return service.getTopics();
+    if (method === "POST") {
+      const topic = String(body.topic || "").trim();
+      if (!topic) throw new Error("Missing 'topic' field");
+      await service.addTopic(topic);
+      return { ok: true, topic };
+    }
+    if (method === "DELETE") {
+      await service.clearTopics();
+      return { ok: true, action: "cleared" };
+    }
+  }
+
+  // Service input routes: /api/services/topic-tracker/topics
+  if (pathname === "/api/services/topic-tracker/topics") {
+    const service = ctx.registry.get("topic-tracker") as TopicTrackerService | undefined;
+    if (!service) throw new NotFoundError("Service not found: topic-tracker");
+    if (method === "GET") return service.getTopics();
+    if (method === "POST") {
+      const topic = String(body.topic || "").trim();
+      if (!topic) throw new Error("Missing 'topic' field");
+      await service.addTopic(topic);
+      return { ok: true, topic };
+    }
+    if (method === "DELETE") {
+      await service.clearTopics();
+      return { ok: true, action: "cleared" };
+    }
+  }
+
+  // Service input routes: /api/services/code-task/tasks
+  if (pathname === "/api/services/code-task/tasks") {
+    const service = ctx.registry.get("code-task") as CodeTaskService | undefined;
+    if (!service) throw new NotFoundError("Service not found: code-task");
+    if (method === "GET") return service.getTasks();
+    if (method === "POST") {
+      const description = String(body.description || "").trim();
+      const targetPath = String(body.targetPath || "").trim();
+      const maxIterations = Number(body.maxIterations) || 3;
+      if (!description) throw new Error("Missing 'description' field");
+      if (!targetPath) throw new Error("Missing 'targetPath' field");
+      await service.addTask({ description, targetPath, maxIterations });
+      return { ok: true, task: { description, targetPath, maxIterations } };
+    }
+    if (method === "DELETE") {
+      await service.clearTasks();
+      return { ok: true, action: "cleared" };
+    }
   }
 
   // Service-specific routes: /api/services/:id/*

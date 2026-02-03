@@ -50,4 +50,12 @@ export class CodeTaskService extends BaseService {
     tasks.push(task);
     await this.tasksStore.save(tasks);
   }
+
+  async getTasks(): Promise<CodeTask[]> {
+    return this.tasksStore.load();
+  }
+
+  async clearTasks(): Promise<void> {
+    await this.tasksStore.save([]);
+  }
 }

@@ -46,4 +46,12 @@ export class TopicTrackerService extends BaseService {
       await this.trackedTopicsStore.save(topics);
     }
   }
+
+  async getTopics(): Promise<string[]> {
+    return this.trackedTopicsStore.load();
+  }
+
+  async clearTopics(): Promise<void> {
+    await this.trackedTopicsStore.save([]);
+  }
 }

@@ -32,6 +32,10 @@ export function apiPut<T>(path: string, body?: unknown): Promise<T> {
   });
 }
 
+export function apiDelete<T>(path: string): Promise<T> {
+  return apiFetch<T>(path, { method: 'DELETE' });
+}
+
 // Type definitions for API responses
 
 export interface Service {
