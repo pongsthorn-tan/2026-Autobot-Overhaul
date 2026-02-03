@@ -6,7 +6,6 @@ import {
   apiFetch,
   apiPost,
   apiPut,
-  apiDelete,
   type Service,
   type Budget,
   type LogEntry,
@@ -14,12 +13,6 @@ import {
   type ServiceModelConfig,
   type NextRunsResponse,
 } from '../../lib/api';
-
-interface CodeTask {
-  description: string;
-  targetPath: string;
-  maxIterations: number;
-}
 
 interface ScheduledServiceInfo {
   maxCycles?: number;
@@ -53,15 +46,6 @@ export default function ServiceDetailPage() {
   const [cyclesCompleted, setCyclesCompleted] = useState(0);
   const [nextRuns, setNextRuns] = useState<string[]>([]);
 
-  // Task queue state
-  const [topics, setTopics] = useState<string[]>([]);
-  const [codeTasks, setCodeTasks] = useState<CodeTask[]>([]);
-  const [newTopic, setNewTopic] = useState('');
-  const [newCodeTask, setNewCodeTask] = useState({ description: '', targetPath: '', maxIterations: 3 });
-
-  const isTopicService = serviceId === 'research' || serviceId === 'topic-tracker';
-  const isCodeTaskService = serviceId === 'code-task';
-  const hasTaskQueue = isTopicService || isCodeTaskService;
 
   const fetchNextRuns = useCallback(async () => {
     try {
@@ -71,16 +55,6 @@ export default function ServiceDetailPage() {
       setNextRuns([]);
     }
   }, [serviceId]);
-
-  const fetchTaskQueue = useCallback(async () => {
-    if (isTopicService) {
-      const data = await apiFetch<string[]>(`/api/services/${serviceId}/topics`).catch(() => []);
-      setTopics(data);
-    } else if (isCodeTaskService) {
-      const data = await apiFetch<CodeTask[]>(`/api/services/${serviceId}/tasks`).catch(() => []);
-      setCodeTasks(data);
-    }
-  }, [serviceId, isTopicService, isCodeTaskService]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -96,7 +70,6 @@ export default function ServiceDetailPage() {
       if (configData) {
         setModel(configData.model);
       }
-      await fetchTaskQueue();
       await fetchNextRuns();
 
       if (serviceData?.schedule) {
@@ -127,7 +100,7 @@ export default function ServiceDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [serviceId, fetchTaskQueue, fetchNextRuns]);
+  }, [serviceId, fetchNextRuns]);
 
   useEffect(() => {
     fetchData();
@@ -206,65 +179,6 @@ export default function ServiceDetailPage() {
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update schedule');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleAddTopic = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const topic = newTopic.trim();
-    if (!topic) return;
-    setActionLoading('add-topic');
-    setError(null);
-    try {
-      await apiPost(`/api/services/${serviceId}/topics`, { topic });
-      setNewTopic('');
-      await fetchTaskQueue();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add topic');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleClearTopics = async () => {
-    setActionLoading('clear-topics');
-    setError(null);
-    try {
-      await apiDelete(`/api/services/${serviceId}/topics`);
-      await fetchTaskQueue();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clear topics');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleAddCodeTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCodeTask.description.trim() || !newCodeTask.targetPath.trim()) return;
-    setActionLoading('add-task');
-    setError(null);
-    try {
-      await apiPost(`/api/services/${serviceId}/tasks`, newCodeTask);
-      setNewCodeTask({ description: '', targetPath: '', maxIterations: 3 });
-      await fetchTaskQueue();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add task');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleClearTasks = async () => {
-    setActionLoading('clear-tasks');
-    setError(null);
-    try {
-      await apiDelete(`/api/services/${serviceId}/tasks`);
-      await fetchTaskQueue();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clear tasks');
     } finally {
       setActionLoading(null);
     }
@@ -417,170 +331,15 @@ export default function ServiceDetailPage() {
         </div>
       </div>
 
-      {/* Task Queue */}
-      {hasTaskQueue && (
-        <div className="section">
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px' }}>
-            {isTopicService ? 'Topics' : 'Task Queue'}
-          </h2>
-          <div className="card">
-            {/* Topic input for research / topic-tracker */}
-            {isTopicService && (
-              <>
-                <form onSubmit={handleAddTopic} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                  <input
-                    type="text"
-                    placeholder={serviceId === 'research' ? 'Add research topic...' : 'Add topic to track...'}
-                    value={newTopic}
-                    onChange={(e) => setNewTopic(e.target.value)}
-                    style={{ flex: 1 }}
-                  />
-                  <button type="submit" className="btn btn-primary" disabled={actionLoading === 'add-topic' || !newTopic.trim()}>
-                    {actionLoading === 'add-topic' ? 'Adding...' : 'Add'}
-                  </button>
-                </form>
-                {topics.length > 0 ? (
-                  <>
-                    <div style={{ marginBottom: '8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      {topics.length} topic{topics.length !== 1 ? 's' : ''} queued
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                      {topics.map((topic, idx) => (
-                        <span
-                          key={idx}
-                          style={{
-                            padding: '4px 12px',
-                            borderRadius: '16px',
-                            background: 'var(--bg-secondary)',
-                            border: '1px solid var(--border)',
-                            fontSize: '0.85rem',
-                          }}
-                        >
-                          {topic}
-                        </span>
-                      ))}
-                    </div>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={handleClearTopics}
-                      disabled={actionLoading === 'clear-topics'}
-                    >
-                      {actionLoading === 'clear-topics' ? 'Clearing...' : 'Clear All'}
-                    </button>
-                  </>
-                ) : (
-                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                    No topics queued. Add topics above to run this service.
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Code task input */}
-            {isCodeTaskService && (
-              <>
-                <form onSubmit={handleAddCodeTask} style={{ marginBottom: '16px' }}>
-                  <div style={{ marginBottom: '8px' }}>
-                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                      Description
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="What should the AI do?"
-                      value={newCodeTask.description}
-                      onChange={(e) => setNewCodeTask({ ...newCodeTask, description: e.target.value })}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        Target Path
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="/path/to/project"
-                        value={newCodeTask.targetPath}
-                        onChange={(e) => setNewCodeTask({ ...newCodeTask, targetPath: e.target.value })}
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                    <div style={{ width: '120px' }}>
-                      <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                        Max Iterations
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={newCodeTask.maxIterations}
-                        onChange={(e) => setNewCodeTask({ ...newCodeTask, maxIterations: parseInt(e.target.value, 10) || 3 })}
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={actionLoading === 'add-task' || !newCodeTask.description.trim() || !newCodeTask.targetPath.trim()}
-                  >
-                    {actionLoading === 'add-task' ? 'Adding...' : 'Add Task'}
-                  </button>
-                </form>
-                {codeTasks.length > 0 ? (
-                  <>
-                    <div style={{ marginBottom: '8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      {codeTasks.length} task{codeTasks.length !== 1 ? 's' : ''} queued
-                    </div>
-                    {codeTasks.map((task, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid var(--border)',
-                          marginBottom: '6px',
-                          fontSize: '0.85rem',
-                        }}
-                      >
-                        <div style={{ fontWeight: 500, marginBottom: '2px' }}>{task.description}</div>
-                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-                          {task.targetPath} &middot; {task.maxIterations} iterations
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={handleClearTasks}
-                      disabled={actionLoading === 'clear-tasks'}
-                      style={{ marginTop: '8px' }}
-                    >
-                      {actionLoading === 'clear-tasks' ? 'Clearing...' : 'Clear All'}
-                    </button>
-                  </>
-                ) : (
-                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                    No code tasks queued. Add tasks above to run this service.
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+      {/* Tasks Link */}
+      <div className="section">
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px' }}>Tasks</h2>
+        <div className="card">
+          <a href={`/tasks?service=${serviceId}`} className="btn btn-primary btn-sm">
+            Go to Tasks tab to create tasks for this service
+          </a>
         </div>
-      )}
-
-      {/* No input needed message for report/self-improve */}
-      {!hasTaskQueue && (serviceId === 'report' || serviceId === 'self-improve') && (
-        <div className="section">
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px' }}>Task Queue</h2>
-          <div className="card">
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-              This service runs automatically — no manual input required.
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Execution History Link */}
       <div className="section">

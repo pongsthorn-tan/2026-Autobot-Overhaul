@@ -11,6 +11,7 @@ import {
   RunTaskResult,
   RunStatus,
 } from "../shared/types/service.js";
+import { TaskParams } from "../shared/types/task.js";
 import { spawnClaudeTask } from "../shared/claude-runner/index.js";
 import { CostTracker } from "../cost-control/tracker/index.js";
 import { createLogger, Logger } from "../shared/logger/index.js";
@@ -19,6 +20,12 @@ import { JsonStore } from "../shared/persistence/index.js";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
+
+export interface StandaloneContext {
+  model: ClaudeModel;
+  budgetKey: string;
+  runRecord: RunRecord;
+}
 
 const TASKS_BASE = path.resolve(process.cwd(), "tasks");
 
@@ -141,11 +148,15 @@ export abstract class BaseService implements Service {
     maxTurns?: number;
     iteration?: number;
     existingTaskId?: string;
+    modelOverride?: ClaudeModel;
+    serviceIdOverride?: string;
   }): Promise<{ taskId: string; output: string; costEntry: import("../shared/types/cost.js").CostEntry }> {
     const taskId = params.existingTaskId ?? generateTaskId(this.getServiceId(), params.label);
     const taskLabel = `${this.getServiceId()}: ${params.label}`;
     const taskDir = path.join(TASKS_BASE, this.getServiceId(), taskId);
     const iteration = params.iteration ?? 1;
+    const effectiveModel = params.modelOverride ?? this._model;
+    const effectiveServiceId = params.serviceIdOverride ?? this.getServiceId();
 
     await mkdir(taskDir, { recursive: true });
 
@@ -155,11 +166,11 @@ export abstract class BaseService implements Service {
       prompt: params.prompt,
       workingDir: taskDir,
       maxTurns: params.maxTurns ?? 5,
-      model: MODEL_IDS[this._model],
+      model: MODEL_IDS[effectiveModel],
     });
 
     const costEntry = await this.costTracker.captureAndRecordCost({
-      serviceId: this.getServiceId(),
+      serviceId: effectiveServiceId,
       taskId,
       taskLabel,
       iteration,
@@ -234,5 +245,36 @@ export abstract class BaseService implements Service {
       lastRun: this.lastRun,
       logs: this.taskLogs.slice(-50),
     };
+  }
+
+  async runStandalone(taskParams: TaskParams, model: ClaudeModel, budgetKey: string): Promise<RunRecord> {
+    const runRecord: RunRecord = {
+      runId: uuidv4(),
+      cycleNumber: 0,
+      serviceId: budgetKey,
+      model,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      status: "running",
+      tasks: [],
+      totalTokens: 0,
+      totalCost: 0,
+    };
+
+    try {
+      await this.executeStandalone(taskParams, { model, budgetKey, runRecord });
+      runRecord.status = "completed";
+    } catch (err) {
+      runRecord.status = "errored";
+      throw err;
+    } finally {
+      runRecord.completedAt = new Date().toISOString();
+    }
+
+    return runRecord;
+  }
+
+  protected async executeStandalone(_params: TaskParams, _ctx: StandaloneContext): Promise<void> {
+    throw new Error(`executeStandalone() not implemented for ${this.getServiceId()}`);
   }
 }

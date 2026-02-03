@@ -44,6 +44,9 @@ export default function RootLayout({
               <a href="/" className="nav-link">
                 Dashboard
               </a>
+              <a href="/tasks" className="nav-link">
+                Tasks
+              </a>
               <a href="/costs" className="nav-link">
                 Costs
               </a>
@@ -58,7 +61,7 @@ export default function RootLayout({
               color: 'var(--text-muted)',
             }}
           >
-            Admin Panel
+            v{process.env.NEXT_PUBLIC_BUILD_TAG || 'dev'}
           </div>
         </nav>
         <main>{children}</main>

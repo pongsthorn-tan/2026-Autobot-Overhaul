@@ -1,5 +1,6 @@
 import { ServiceConfig } from "../../shared/types/service.js";
-import { BaseService } from "../base-service.js";
+import { TaskParams, SelfImproveTaskParams } from "../../shared/types/task.js";
+import { BaseService, StandaloneContext } from "../base-service.js";
 import { generateTaskId } from "../../shared/utils/index.js";
 
 export class SelfImproveService extends BaseService {
@@ -41,5 +42,21 @@ export class SelfImproveService extends BaseService {
     }
 
     this._status = "idle";
+  }
+
+  protected async executeStandalone(params: TaskParams, ctx: StandaloneContext): Promise<void> {
+    const p = params as SelfImproveTaskParams;
+    const taskId = generateTaskId("self-improve", "standalone");
+    for (let i = 1; i <= p.maxIterations; i++) {
+      await this.runTask({
+        label: `optimization (iteration ${i}/${p.maxIterations})`,
+        prompt: `Iteration ${i} of ${p.maxIterations}: Analyze the autobot system logs, performance metrics, and service outputs. Identify areas for improvement in prompts, workflows, or configurations. Suggest and implement concrete improvements.`,
+        maxTurns: 5,
+        iteration: i,
+        existingTaskId: taskId,
+        modelOverride: ctx.model,
+        serviceIdOverride: ctx.budgetKey,
+      });
+    }
   }
 }

@@ -1,18 +1,20 @@
-version: "3.8"
-
 services:
   autobot:
-    build: .
+    build:
+      context: .
+      args:
+        - BUILD_TAG=20260203-1444
+    image: e-autobot:20260203-1444
     container_name: autobot
     restart: unless-stopped
     ports:
-      - "3000:3000"
-      - "3001:3001"
+      - "7600:7600"
+      - "7601:7601"
     environment:
       - NODE_ENV=production
       - WEB_UI_HOST=0.0.0.0
-      - WEB_UI_PORT=3000
-      - WEBUI_PORT=3001
+      - WEB_UI_PORT=7600
+      - WEBUI_PORT=7601
       - NEXT_PUBLIC_API_URL=https://e-autobot.pongsthorn.xyz/api
       - DEFAULT_SERVICE_BUDGET=10.00
       - BUDGET_ALERT_THRESHOLD=0.8
@@ -22,7 +24,10 @@ services:
       - autobot-tasks:/app/tasks
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: nginx.Dockerfile
+    image: e-autobot-nginx:20260203-1444
     container_name: autobot-nginx
     restart: unless-stopped
     ports:

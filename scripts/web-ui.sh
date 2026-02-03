@@ -38,7 +38,7 @@ case "$COMMAND" in
     nohup npx tsx src/main.ts > logs/system.log 2>&1 &
     echo $! > "$PID_FILE"
     echo "Autobot system started (PID: $(cat "$PID_FILE"))"
-    echo "API server: http://localhost:${WEB_UI_PORT:-3000}"
+    echo "API server: http://localhost:${WEB_UI_PORT:-7600}"
     echo "Logs: $PROJECT_DIR/logs/system.log"
     ;;
   stop)

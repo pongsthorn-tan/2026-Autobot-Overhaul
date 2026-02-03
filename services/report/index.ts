@@ -1,5 +1,6 @@
 import { ServiceConfig } from "../../shared/types/service.js";
-import { BaseService } from "../base-service.js";
+import { TaskParams, ReportTaskParams } from "../../shared/types/task.js";
+import { BaseService, StandaloneContext } from "../base-service.js";
 
 export class ReportService extends BaseService {
   readonly config: ServiceConfig = {
@@ -30,5 +31,16 @@ export class ReportService extends BaseService {
     }
 
     this._status = "idle";
+  }
+
+  protected async executeStandalone(params: TaskParams, ctx: StandaloneContext): Promise<void> {
+    const p = params as ReportTaskParams;
+    await this.runTask({
+      label: "standalone-report",
+      prompt: p.prompt,
+      maxTurns: 3,
+      modelOverride: ctx.model,
+      serviceIdOverride: ctx.budgetKey,
+    });
   }
 }

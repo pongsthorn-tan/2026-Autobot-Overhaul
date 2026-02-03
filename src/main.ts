@@ -9,6 +9,8 @@ import { CostControlAPI } from "../cost-control/api/index.js";
 import { ServiceRegistry } from "../scheduler/registry/index.js";
 import { SchedulingEngine } from "../scheduler/engine/index.js";
 import { SchedulerAPI } from "../scheduler/api/index.js";
+import { TaskExecutor } from "../scheduler/task-executor/index.js";
+import { TaskStore } from "../shared/task-store/index.js";
 import { ResearchService } from "../services/research/index.js";
 import { TopicTrackerService } from "../services/topic-tracker/index.js";
 import { ReportService } from "../services/report/index.js";
@@ -16,6 +18,7 @@ import { CodeTaskService } from "../services/code-task/index.js";
 import { SelfImproveService } from "../services/self-improve/index.js";
 import { BaseService } from "../services/base-service.js";
 import { ClaudeModel } from "../shared/types/service.js";
+import { CreateTaskInput } from "../shared/types/task.js";
 import { createServer } from "http";
 
 const logger = createLogger("system");
@@ -70,6 +73,11 @@ async function main(): Promise<void> {
   // Load persisted scheduler state
   await engine.loadState();
 
+  // Task Executor
+  const taskStore = new TaskStore();
+  const taskExecutor = new TaskExecutor(taskStore, registry, budgetManager, costTracker, engine);
+  await taskExecutor.reloadScheduledTasks();
+
   // Expose globals for the web UI API routes
   const autobot = {
     schedulerAPI,
@@ -78,6 +86,7 @@ async function main(): Promise<void> {
     engine,
     bus,
     config,
+    taskExecutor,
   };
 
   (globalThis as Record<string, unknown>).__autobot = autobot;
@@ -163,6 +172,7 @@ interface AutobotContext {
   engine: SchedulingEngine;
   bus: EventEmitterBus;
   config: ReturnType<typeof loadConfig>;
+  taskExecutor: TaskExecutor;
 }
 
 async function handleRoute(
@@ -172,6 +182,55 @@ async function handleRoute(
   ctx: AutobotContext,
 ): Promise<unknown> {
   const pathname = url.pathname;
+
+  // Task routes: /api/tasks
+  const taskDetailMatch = pathname.match(/^\/api\/tasks\/([^/]+)$/);
+  if (pathname === "/api/tasks" && method === "POST") {
+    const input = body as unknown as CreateTaskInput;
+    if (!input.serviceType || !input.params) {
+      throw new Error("Missing required fields: serviceType, params");
+    }
+    const model = input.model || "sonnet";
+    const budget = input.budget ?? 1.0;
+    const runNow = input.runNow !== false;
+
+    const taskInput: CreateTaskInput = {
+      serviceType: input.serviceType,
+      params: input.params,
+      model,
+      budget,
+      runNow,
+      schedule: input.schedule,
+    };
+
+    if (runNow) {
+      const task = await ctx.taskExecutor.createAndRun(taskInput);
+      return task;
+    } else if (input.schedule) {
+      const task = await ctx.taskExecutor.createAndSchedule(taskInput, input.schedule);
+      return task;
+    } else {
+      throw new Error("Must either runNow or provide a schedule");
+    }
+  }
+
+  if (pathname === "/api/tasks" && method === "GET") {
+    const serviceType = url.searchParams.get("serviceType") ?? undefined;
+    return ctx.taskExecutor.listTasks(serviceType);
+  }
+
+  if (taskDetailMatch && method === "GET") {
+    const taskId = taskDetailMatch[1];
+    const task = await ctx.taskExecutor.getTask(taskId);
+    if (!task) throw new NotFoundError(`Task not found: ${taskId}`);
+    return task;
+  }
+
+  if (taskDetailMatch && method === "DELETE") {
+    const taskId = taskDetailMatch[1];
+    await ctx.taskExecutor.deleteTask(taskId);
+    return { ok: true, taskId, action: "deleted" };
+  }
 
   // GET /api/services
   if (pathname === "/api/services" && method === "GET") {

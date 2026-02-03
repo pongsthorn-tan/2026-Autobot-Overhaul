@@ -6,32 +6,42 @@ AI-powered autonomous task scheduling system that runs, monitors, and self-impro
 
 ```
 2026-Autobot-Overhaul/
-├── scheduler/           # Core scheduler module
-│   ├── engine/          # Scheduling engine (cron, cycle, time-of-day, day-of-week)
-│   ├── registry/        # Service registry and lifecycle management
-│   └── api/             # Scheduler control API
-├── cost-control/        # Budget and cost tracking module
-│   ├── tracker/         # Token usage and cost tracking per service/task/iteration
-│   ├── budget/          # Budget allocation and enforcement
-│   ├── ccusage/         # Integration with ccusage for cost estimation
-│   └── api/             # Cost control API
-├── services/            # AI services (each independently built)
-│   ├── research/        # Research service
-│   ├── topic-tracker/   # Topic tracking service
-│   ├── report/          # Report generation and scheduled reporting
-│   ├── code-task/       # Code task execution service
-│   └── self-improve/    # Self-iterative improvement service
-├── web-ui/              # Admin dashboard and control panel
-│   ├── dashboard/       # Overview: service status, budgets, logs
-│   ├── controls/        # Start/stop/pause services, add budgets
-│   └── logs/            # Log viewer per service
-├── shared/              # Shared libraries and types
-│   ├── types/           # Common type definitions
-│   ├── logger/          # Structured logging (token usage, task details, iterations)
-│   ├── messaging/       # Inter-module communication (scheduler <-> cost-control)
-│   └── config/          # Shared configuration
-├── scripts/             # Admin CLI scripts
-└── docs/                # Architecture docs and runbooks
+├── src/main.ts              # Entry point — boots everything, HTTP API routes
+├── scheduler/               # Core scheduler module
+│   ├── engine/              # Scheduling engine (cron, cycle, time-of-day, day-of-week)
+│   ├── registry/            # Service registry and lifecycle management
+│   └── api/                 # Scheduler control API
+├── cost-control/            # Budget and cost tracking module
+│   ├── tracker/             # Token usage and cost tracking per service/task/iteration
+│   ├── budget/              # Budget allocation and enforcement
+│   ├── ccusage/             # Integration with ccusage for cost estimation
+│   └── api/                 # Cost control API
+├── services/                # AI services (each independently built)
+│   ├── base-service.ts      # BaseService: shared runTask() logic
+│   ├── research/            # Research service
+│   ├── topic-tracker/       # Topic tracking service
+│   ├── report/              # Report generation and scheduled reporting
+│   ├── code-task/           # Code task execution service
+│   └── self-improve/        # Self-iterative improvement service
+├── web-ui/                  # Next.js 14 dashboard (standalone build, separate package.json)
+│   └── app/                 # App Router pages
+│       ├── page.tsx         # Dashboard: service grid + budgets + activity
+│       ├── costs/           # Cost overview + per-service drilldown
+│       ├── services/[id]/   # Service controls + schedule + budget management
+│       ├── logs/            # Filterable log viewer
+│       └── lib/api.ts       # API fetch helpers
+├── shared/                  # Shared libraries and types
+│   ├── types/               # Common type definitions (Service, Budget, CostEntry, etc.)
+│   ├── logger/              # Structured logging (token usage, task details, iterations)
+│   ├── messaging/           # EventEmitterBus: pub/sub between modules
+│   ├── persistence/         # JsonStore<T>: read/write JSON files in data/
+│   ├── claude-runner/       # spawnClaudeTask(): spawn Claude CLI, capture session
+│   ├── config/              # loadConfig(): env vars + .env file
+│   └── utils/               # generateTaskId(): slug + timestamp
+├── scripts/                 # Admin CLI scripts
+├── Dockerfile               # Multi-stage: backend build → webui build → production
+├── docker-compose.yml       # autobot + nginx containers with named volumes
+└── nginx.conf               # Reverse proxy: /api/* → 3000, /* → 3001
 ```
 
 ## Module Responsibilities
@@ -87,14 +97,32 @@ AI-powered autonomous task scheduling system that runs, monitors, and self-impro
 
 ## Tech Stack
 
-- To be decided per module (fill in as stack choices are made)
-- Shared logging format: structured JSON logs
-- Inter-module communication: to be decided (event bus, REST, or message queue)
+- **Backend** — TypeScript, Node.js, node-cron
+- **Frontend** — Next.js 14, React 18 (separate package in `web-ui/`)
+- **Deployment** — Docker, nginx, Cloudflare Tunnel
+- **AI Runtime** — Claude CLI (spawned per task)
+- **Cost Tracking** — ccusage CLI
+- **Logging** — Structured JSON logs
+- **Inter-module communication** — EventEmitterBus (in-process pub/sub)
 
 ## Build & Run
 
 ```bash
-# (To be filled in as the project develops)
+# Install dependencies
+npm install
+cd web-ui && npm install && cd ..
+
+# Build TypeScript
+npm run build
+
+# Run the system (API + scheduler)
+npm start
+
+# Run web UI in dev mode (separate terminal)
+cd web-ui && npm run dev
+
+# Docker deployment
+docker compose up -d --build
 ```
 
 ## Development Conventions

@@ -23,6 +23,9 @@ RUN npm ci
 
 COPY web-ui/ ./
 
+ARG BUILD_TAG=dev
+ENV NEXT_PUBLIC_BUILD_TAG=$BUILD_TAG
+
 # Empty string means relative URLs - works behind nginx reverse proxy
 ENV NEXT_PUBLIC_API_URL=""
 RUN npm run build
@@ -51,10 +54,10 @@ RUN mkdir -p data logs tasks
 # Environment defaults
 ENV NODE_ENV=production
 ENV WEB_UI_HOST=0.0.0.0
-ENV WEB_UI_PORT=3000
-ENV WEBUI_PORT=3001
+ENV WEB_UI_PORT=7600
+ENV WEBUI_PORT=7601
 
-EXPOSE 3000 3001
+EXPOSE 7600 7601
 
 # Start both backend and web UI
 COPY docker-entrypoint.sh /docker-entrypoint.sh

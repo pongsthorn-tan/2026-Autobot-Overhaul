@@ -1,5 +1,6 @@
 import { ServiceConfig } from "../../shared/types/service.js";
-import { BaseService } from "../base-service.js";
+import { TaskParams, TopicTrackerTaskParams } from "../../shared/types/task.js";
+import { BaseService, StandaloneContext } from "../base-service.js";
 import { JsonStore } from "../../shared/persistence/index.js";
 
 export class TopicTrackerService extends BaseService {
@@ -60,5 +61,16 @@ export class TopicTrackerService extends BaseService {
 
   async clearTopics(): Promise<void> {
     await this.trackedTopicsStore.save([]);
+  }
+
+  protected async executeStandalone(params: TaskParams, ctx: StandaloneContext): Promise<void> {
+    const p = params as TopicTrackerTaskParams;
+    await this.runTask({
+      label: `track: ${p.topic}`,
+      prompt: `Check for recent developments and changes regarding: "${p.topic}". Summarize any new findings, compare with known information, and highlight significant changes.`,
+      maxTurns: 3,
+      modelOverride: ctx.model,
+      serviceIdOverride: ctx.budgetKey,
+    });
   }
 }

@@ -44,12 +44,3 @@ export class EventEmitterBus implements MessageBus {
     this.emitter.off(type, handler);
   }
 }
-
-let busInstance: EventEmitterBus | null = null;
-
-export function getMessageBus(): EventEmitterBus {
-  if (!busInstance) {
-    busInstance = new EventEmitterBus();
-  }
-  return busInstance;
-}

@@ -39,31 +39,4 @@ export class CcusageClient {
     }
   }
 
-  async getDailyCosts(projectName: string, since: string): Promise<unknown> {
-    try {
-      const { stdout } = await execFileAsync(CCUSAGE_PATH, [
-        "daily",
-        "--json",
-        "--since",
-        since,
-        "--project",
-        projectName,
-      ]);
-      return JSON.parse(stdout);
-    } catch {
-      return null;
-    }
-  }
-
-  async getCurrentBlock(): Promise<unknown> {
-    try {
-      const { stdout } = await execFileAsync(CCUSAGE_PATH, [
-        "blocks",
-        "--json",
-      ]);
-      return JSON.parse(stdout);
-    } catch {
-      return null;
-    }
-  }
 }

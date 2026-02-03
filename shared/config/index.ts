@@ -18,7 +18,7 @@ export function loadConfig(): AppConfig {
     logLevel: process.env.LOG_LEVEL ?? "info",
     logDir: process.env.LOG_DIR ?? resolve(process.cwd(), "logs"),
     webUi: {
-      port: parseInt(process.env.WEB_UI_PORT ?? "3000", 10),
+      port: parseInt(process.env.WEB_UI_PORT ?? "7600", 10),
       host: process.env.WEB_UI_HOST ?? "localhost",
     },
     costControl: {

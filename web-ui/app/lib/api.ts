@@ -126,3 +126,45 @@ export interface NextRunsResponse {
   serviceId: string;
   nextRuns: string[];
 }
+
+// Standalone Tasks
+
+export type StandaloneTaskStatus = 'pending' | 'scheduled' | 'running' | 'completed' | 'errored';
+export type TaskServiceType = 'report' | 'research' | 'code-task' | 'topic-tracker' | 'self-improve';
+
+export interface StandaloneTask {
+  taskId: string;
+  serviceType: TaskServiceType;
+  params: Record<string, unknown>;
+  model: ClaudeModel;
+  budget: number;
+  schedule?: Record<string, unknown>;
+  status: StandaloneTaskStatus;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  costSpent: number;
+  error: string | null;
+}
+
+export interface CreateTaskInput {
+  serviceType: TaskServiceType;
+  params: Record<string, unknown>;
+  model: ClaudeModel;
+  budget: number;
+  runNow: boolean;
+  schedule?: Record<string, unknown>;
+}
+
+export function createTask(input: CreateTaskInput): Promise<StandaloneTask> {
+  return apiPost<StandaloneTask>('/api/tasks', input);
+}
+
+export function listTasks(serviceType?: string): Promise<StandaloneTask[]> {
+  const query = serviceType ? `?serviceType=${serviceType}` : '';
+  return apiFetch<StandaloneTask[]>(`/api/tasks${query}`);
+}
+
+export function deleteTask(taskId: string): Promise<{ ok: boolean }> {
+  return apiDelete<{ ok: boolean }>(`/api/tasks/${taskId}`);
+}

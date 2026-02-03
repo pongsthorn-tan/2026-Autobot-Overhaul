@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-API_BASE="http://localhost:${WEB_UI_PORT:-3000}/api"
+API_BASE="http://localhost:${WEB_UI_PORT:-7600}/api"
 
 usage() {
   cat <<EOF

@@ -1,5 +1,6 @@
 import { ServiceConfig } from "../../shared/types/service.js";
-import { BaseService } from "../base-service.js";
+import { TaskParams, CodeTaskParams } from "../../shared/types/task.js";
+import { BaseService, StandaloneContext } from "../base-service.js";
 import { JsonStore } from "../../shared/persistence/index.js";
 
 interface CodeTask {
@@ -64,5 +65,16 @@ export class CodeTaskService extends BaseService {
 
   async clearTasks(): Promise<void> {
     await this.tasksStore.save([]);
+  }
+
+  protected async executeStandalone(params: TaskParams, ctx: StandaloneContext): Promise<void> {
+    const p = params as CodeTaskParams;
+    await this.runTask({
+      label: p.description,
+      prompt: `Execute the following coding task:\n\n${p.description}\n\nTarget path: ${p.targetPath}`,
+      maxTurns: p.maxIterations,
+      modelOverride: ctx.model,
+      serviceIdOverride: ctx.budgetKey,
+    });
   }
 }

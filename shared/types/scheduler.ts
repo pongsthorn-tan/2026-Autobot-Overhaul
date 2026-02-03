@@ -22,7 +22,16 @@ export interface ScheduledService {
   cyclesCompleted: number;
 }
 
+export interface ScheduledTask {
+  taskId: string;
+  schedule: Schedule;
+  enabled: boolean;
+  lastRun: string | null;
+  nextRun: string | null;
+}
+
 export interface SchedulerState {
   services: ScheduledService[];
+  tasks: ScheduledTask[];
   isRunning: boolean;
 }

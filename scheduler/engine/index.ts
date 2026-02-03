@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { Schedule, ScheduledService, SchedulerState } from "../../shared/types/scheduler.js";
+import { Schedule, ScheduledService, ScheduledTask, SchedulerState } from "../../shared/types/scheduler.js";
 import { ServiceStatus } from "../../shared/types/service.js";
 import { MessageBus } from "../../shared/messaging/index.js";
 import { CostControlAPI } from "../../cost-control/api/index.js";
@@ -19,6 +19,7 @@ const logger = createLogger("scheduler");
 
 export class SchedulingEngine {
   private schedules = new Map<string, ScheduledService>();
+  private scheduledTasks = new Map<string, ScheduledTask>();
   private timers = new Map<string, cron.ScheduledTask | ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>>();
   private store: JsonStore<SchedulerState>;
 
@@ -30,7 +31,7 @@ export class SchedulingEngine {
   ) {
     this.store = new JsonStore<SchedulerState>(
       `${dataDir}/scheduler-state.json`,
-      { services: [], isRunning: false },
+      { services: [], tasks: [], isRunning: false },
     );
   }
 
@@ -113,6 +114,100 @@ export class SchedulingEngine {
         break;
       }
     }
+  }
+
+  scheduleCallback(key: string, schedule: Schedule, callback: () => Promise<void>): void {
+    // Unschedule any existing timer with this key
+    const existingTimer = this.timers.get(key);
+    if (existingTimer) {
+      if (typeof existingTimer === "object" && "stop" in existingTimer) {
+        (existingTimer as cron.ScheduledTask).stop();
+      } else {
+        clearInterval(existingTimer as ReturnType<typeof setInterval>);
+        clearTimeout(existingTimer as ReturnType<typeof setTimeout>);
+      }
+      this.timers.delete(key);
+    }
+
+    const wrappedCallback = () => {
+      const scheduledTask = this.scheduledTasks.get(key);
+      if (scheduledTask) {
+        scheduledTask.lastRun = new Date().toISOString();
+      }
+      callback().catch((err) => {
+        logger.error(`Scheduled callback failed for ${key}`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      this.persistState();
+    };
+
+    switch (schedule.type) {
+      case "once": {
+        if (!schedule.at) break;
+        const delay = new Date(schedule.at).getTime() - Date.now();
+        if (delay > 0) {
+          const timer = setTimeout(wrappedCallback, delay);
+          this.timers.set(key, timer);
+        }
+        break;
+      }
+      case "interval": {
+        if (!schedule.intervalMs) break;
+        const timer = setInterval(wrappedCallback, schedule.intervalMs);
+        this.timers.set(key, timer);
+        break;
+      }
+      case "daily": {
+        if (!schedule.timeOfDay) break;
+        const [hour, minute] = schedule.timeOfDay.split(":").map(Number);
+        const cronExpr = `${minute} ${hour} * * *`;
+        const task = cron.schedule(cronExpr, wrappedCallback);
+        this.timers.set(key, task);
+        break;
+      }
+      case "weekly": {
+        if (!schedule.timeOfDay || !schedule.daysOfWeek) break;
+        const [hour, minute] = schedule.timeOfDay.split(":").map(Number);
+        const days = schedule.daysOfWeek.join(",");
+        const cronExpr = `${minute} ${hour} * * ${days}`;
+        const task = cron.schedule(cronExpr, wrappedCallback);
+        this.timers.set(key, task);
+        break;
+      }
+      case "cron": {
+        if (!schedule.cron) break;
+        const task = cron.schedule(schedule.cron, wrappedCallback);
+        this.timers.set(key, task);
+        break;
+      }
+    }
+
+    // Track the scheduled task
+    this.scheduledTasks.set(key, {
+      taskId: key,
+      schedule,
+      enabled: true,
+      lastRun: null,
+      nextRun: null,
+    });
+
+    this.persistState();
+  }
+
+  unscheduleCallback(key: string): void {
+    const timer = this.timers.get(key);
+    if (timer) {
+      if (typeof timer === "object" && "stop" in timer) {
+        (timer as cron.ScheduledTask).stop();
+      } else {
+        clearInterval(timer as ReturnType<typeof setInterval>);
+        clearTimeout(timer as ReturnType<typeof setTimeout>);
+      }
+      this.timers.delete(key);
+    }
+    this.scheduledTasks.delete(key);
+    this.persistState();
   }
 
   async executeService(serviceId: string): Promise<void> {
@@ -360,6 +455,7 @@ export class SchedulingEngine {
   getState(): SchedulerState {
     return {
       services: Array.from(this.schedules.values()),
+      tasks: Array.from(this.scheduledTasks.values()),
       isRunning: true,
     };
   }

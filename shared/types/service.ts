@@ -49,21 +49,6 @@ export interface ServiceConfig {
   budget: number;
 }
 
-export interface TaskDefinition {
-  taskId: string;
-  taskLabel: string;
-  prompt: string;
-  maxIterations: number;
-  workingDir: string;
-}
-
-export interface TaskResult {
-  taskId: string;
-  sessionIds: string[];
-  success: boolean;
-  output: string;
-}
-
 export interface TaskLog {
   taskId: string;
   serviceId: string;

@@ -1,5 +1,6 @@
 import { ServiceConfig } from "../../shared/types/service.js";
-import { BaseService } from "../base-service.js";
+import { TaskParams, ResearchTaskParams } from "../../shared/types/task.js";
+import { BaseService, StandaloneContext } from "../base-service.js";
 import { JsonStore } from "../../shared/persistence/index.js";
 
 export class ResearchService extends BaseService {
@@ -59,5 +60,16 @@ export class ResearchService extends BaseService {
 
   async clearTopics(): Promise<void> {
     await this.topicsStore.save([]);
+  }
+
+  protected async executeStandalone(params: TaskParams, ctx: StandaloneContext): Promise<void> {
+    const p = params as ResearchTaskParams;
+    await this.runTask({
+      label: p.topic,
+      prompt: `Research the following topic thoroughly and produce a structured summary with key findings, analysis, and sources:\n\n"${p.topic}"`,
+      maxTurns: 5,
+      modelOverride: ctx.model,
+      serviceIdOverride: ctx.budgetKey,
+    });
   }
 }
