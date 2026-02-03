@@ -51,8 +51,11 @@ RUN npm install -g @anthropic-ai/claude-code
 # Copy scripts
 COPY scripts/ ./scripts/
 
-# Create data and logs directories
-RUN mkdir -p data logs tasks
+# Create non-root user so Claude CLI allows --dangerously-skip-permissions
+RUN groupadd -r autobot && useradd -r -g autobot -m -d /home/autobot autobot
+
+# Create data and logs directories owned by autobot
+RUN mkdir -p data logs tasks && chown -R autobot:autobot data logs tasks
 
 # Environment defaults
 ENV NODE_ENV=production
@@ -65,5 +68,7 @@ EXPOSE 7600 7601
 # Start both backend and web UI
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+
+USER autobot
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

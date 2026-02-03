@@ -3,8 +3,8 @@ services:
     build:
       context: .
       args:
-        - BUILD_TAG=20260203-2138
-    image: e-autobot:20260203-2138
+        - BUILD_TAG=20260203-2150
+    image: e-autobot:20260203-2150
     container_name: autobot
     restart: unless-stopped
     ports:
@@ -19,17 +19,18 @@ services:
       - DEFAULT_SERVICE_BUDGET=10.00
       - BUDGET_ALERT_THRESHOLD=0.8
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     volumes:
       - autobot-data:/app/data
       - autobot-logs:/app/logs
       - autobot-tasks:/app/tasks
-      - ~/.claude:/root/.claude
+      - ~/.claude:/home/autobot/.claude
 
   nginx:
     build:
       context: .
       dockerfile: nginx.Dockerfile
-    image: e-autobot-nginx:20260203-2138
+    image: e-autobot-nginx:20260203-2150
     container_name: autobot-nginx
     restart: unless-stopped
     ports:
