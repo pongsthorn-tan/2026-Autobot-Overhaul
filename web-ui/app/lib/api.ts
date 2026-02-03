@@ -184,13 +184,14 @@ export type ScheduleConfig =
 // Prompt refinement (dual provider: Claude async job or OpenAI sync)
 
 export type RefineProvider = 'claude' | 'openai';
-export type OpenAIModel = 'gpt-5-mini' | 'gpt-5' | 'gpt-5-pro';
+export type OpenAIModel = 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2';
 
 export interface RefineStartResponse {
   provider: RefineProvider;
   jobId?: string;           // claude path
   refinedPrompt?: string;   // openai path
   cost?: number;            // openai path
+  tokensUsed?: { input: number; output: number }; // openai path
 }
 
 export interface RefineJobPollResponse {
@@ -206,8 +207,9 @@ export function startRefinePrompt(
   prompt: string,
   provider: RefineProvider,
   model: string,
+  maxTokens: number,
 ): Promise<RefineStartResponse> {
-  return apiPost<RefineStartResponse>('/api/tasks/refine-prompt', { prompt, provider, model });
+  return apiPost<RefineStartResponse>('/api/tasks/refine-prompt', { prompt, provider, model, maxTokens });
 }
 
 export function pollRefinePrompt(jobId: string): Promise<RefineJobPollResponse> {

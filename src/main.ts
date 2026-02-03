@@ -217,6 +217,7 @@ async function handleRoute(
     const prompt = String(body.prompt || "").trim();
     const provider = String(body.provider || "claude") as "claude" | "openai";
     const model = String(body.model || "sonnet");
+    const maxTokens = Math.min(Math.max(Number(body.maxTokens) || 2048, 256), 16384);
     if (!prompt) throw new Error("Missing 'prompt' field");
 
     const systemPrompt =
@@ -234,7 +235,7 @@ async function handleRoute(
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt },
         ],
-        max_tokens: 4096,
+        max_tokens: maxTokens,
       });
 
       const refinedPrompt = completion.choices[0]?.message?.content?.trim() ?? "";
@@ -244,16 +245,21 @@ async function handleRoute(
 
       // Estimate cost based on model (per 1M tokens pricing)
       const OPENAI_PRICING: Record<string, { input: number; output: number }> = {
-        "gpt-5-mini": { input: 1.50, output: 6.00 },
-        "gpt-5": { input: 10.00, output: 30.00 },
-        "gpt-5-pro": { input: 30.00, output: 120.00 },
+        "gpt-5-nano": { input: 0.05, output: 0.40 },
+        "gpt-5-mini": { input: 0.25, output: 2.00 },
+        "gpt-5.2": { input: 1.75, output: 14.00 },
       };
-      const pricing = OPENAI_PRICING[model] ?? { input: 10.0, output: 30.0 };
+      const pricing = OPENAI_PRICING[model] ?? { input: 1.75, output: 14.0 };
       const cost =
         (promptTokens / 1_000_000) * pricing.input +
         (completionTokens / 1_000_000) * pricing.output;
 
-      return { provider: "openai", refinedPrompt, cost };
+      return {
+        provider: "openai",
+        refinedPrompt,
+        cost,
+        tokensUsed: { input: promptTokens, output: completionTokens },
+      };
     }
 
     // Claude: async job pattern (existing behavior)

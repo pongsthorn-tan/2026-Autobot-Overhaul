@@ -23,6 +23,7 @@ type Step = 'input' | 'refining' | 'review' | 'configure';
 interface PromptVersion {
   prompt: string;
   cost: number;
+  tokensUsed?: { input: number; output: number };
 }
 
 // ---------- Simon Says Mini-Game ----------
@@ -189,6 +190,7 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
   const [refineProvider, setRefineProvider] = useState<RefineProvider>('openai');
   const [refineModel, setRefineModel] = useState<ClaudeModel>('sonnet');
   const [openaiModel, setOpenaiModel] = useState<OpenAIModel>('gpt-5-mini');
+  const [maxTokens, setMaxTokens] = useState(2048);
 
   // Review step
   const [promptHistory, setPromptHistory] = useState<PromptVersion[]>([]);
@@ -227,13 +229,14 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
     const selectedModel = provider === 'openai' ? openaiModel : refineModel;
 
     try {
-      const result = await startRefinePrompt(prompt, provider, selectedModel);
+      const result = await startRefinePrompt(prompt, provider, selectedModel, maxTokens);
 
       // OpenAI: instant response — skip straight to review
       if (result.provider === 'openai' && result.refinedPrompt) {
         const version: PromptVersion = {
           prompt: result.refinedPrompt,
           cost: result.cost ?? 0,
+          tokensUsed: result.tokensUsed,
         };
         setPromptHistory((prev) => [...prev, version]);
         setCurrentPrompt(result.refinedPrompt);
@@ -377,9 +380,9 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
             </label>
             {refineProvider === 'openai' ? (
               <select value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value as OpenAIModel)} style={{ width: '220px' }}>
-                <option value="gpt-5-mini">GPT-5 Mini (Fastest)</option>
-                <option value="gpt-5">GPT-5 (Balanced)</option>
-                <option value="gpt-5-pro">GPT-5 Pro (Best)</option>
+                <option value="gpt-5-nano">GPT-5 Nano ($0.05/$0.40)</option>
+                <option value="gpt-5-mini">GPT-5 Mini ($0.25/$2.00)</option>
+                <option value="gpt-5.2">GPT-5.2 ($1.75/$14.00)</option>
               </select>
             ) : (
               <select value={refineModel} onChange={(e) => setRefineModel(e.target.value as ClaudeModel)} style={{ width: '220px' }}>
@@ -388,6 +391,25 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
                 <option value="opus">Opus (Most Capable)</option>
               </select>
             )}
+          </div>
+
+          {/* Max tokens */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              Max Tokens
+            </label>
+            <select
+              value={maxTokens}
+              onChange={(e) => setMaxTokens(Number(e.target.value))}
+              style={{ width: '140px' }}
+            >
+              <option value={512}>512</option>
+              <option value={1024}>1,024</option>
+              <option value={2048}>2,048</option>
+              <option value={4096}>4,096</option>
+              <option value={8192}>8,192</option>
+              <option value={16384}>16,384</option>
+            </select>
           </div>
         </div>
         {refineError && (
@@ -572,7 +594,12 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
                     fontSize: '0.75rem',
                   }}
                 >
-                  v{idx + 1} — ${version.cost.toFixed(4)}
+                  <div>v{idx + 1} — ${version.cost.toFixed(4)}</div>
+                  {version.tokensUsed && (
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '1px' }}>
+                      {version.tokensUsed.input}in / {version.tokensUsed.output}out
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
