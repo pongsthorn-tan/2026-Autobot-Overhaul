@@ -171,6 +171,50 @@ ${itemList}
 Focus ONLY on NEW developments not listed above. If there is nothing new, say so clearly in the summary rather than repeating old information.`;
 }
 
+// ── Branch-aware topic tracker prompt ────────────────────────────────
+
+export function buildBranchTrackerPrompt(
+  rootTopic: string,
+  branchLabel: string,
+  branchDescription: string,
+  branchPath: string[],
+  preset: TopicPreset,
+  digest: Digest | null,
+): string {
+  const config: PresetConfig = PRESETS[preset] ?? PRESETS.custom;
+
+  const pathContext = branchPath.length > 1
+    ? `\nBranch path: ${branchPath.join(" → ")}`
+    : "";
+
+  const digestContext = digest && digest.entries.length > 0
+    ? buildDigestContext(digest)
+    : "";
+
+  return `You are a topic tracker monitoring a specific dimension of a broader topic.
+
+ROOT TOPIC: "${rootTopic}"
+TRACKING DIMENSION: "${branchLabel}"${pathContext}
+DIMENSION SCOPE: ${branchDescription}
+
+IMPORTANT: Use your web search capabilities to find the most recent information. Search for news from the ${config.timeframe}.
+
+${config.focus}
+
+Focus your search specifically on the "${branchLabel}" dimension of "${rootTopic}". Do NOT cover other dimensions — stay scoped to this branch only.
+${digestContext}
+
+Search for:
+1. Latest news and developments specific to this dimension
+2. Key changes, decisions, or announcements
+3. Notable events or milestones
+4. Expert opinions and analysis
+
+If there are NO new developments for this dimension in the given timeframe, respond with a report that has a single summary section stating "No new developments found for ${branchLabel} in the ${config.timeframe}." — do not fabricate or repeat old information.
+
+${OUTPUT_SCHEMA}${DIGEST_OUTPUT_INSTRUCTION}`;
+}
+
 // ── Scheduled report prompt (topic-tracker without digest) ─────────
 
 export function buildScheduledReportPrompt(

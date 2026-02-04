@@ -17,7 +17,7 @@
 export { ReportIntelService } from "./report.js";
 export { ResearchIntelService } from "./research.js";
 export { TopicTrackerIntelService } from "./topic-tracker.js";
-export { DigestStore, ResearchStateStore } from "./digest-store.js";
+export { DigestStore, ResearchStateStore, TrackerTreeStore } from "./digest-store.js";
 export type {
   IntelStyle,
   TopicPreset,
@@ -26,4 +26,7 @@ export type {
   DigestEntry,
   ResearchState,
   ResearchStep,
+  TrackerTree,
+  TrackerBranch,
+  BranchStatus,
 } from "./types.js";

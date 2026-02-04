@@ -449,7 +449,7 @@ async function handleRoute(
     }
   }
 
-  // Service input routes: /api/services/topic-tracker/topics
+  // Service input routes: /api/services/topic-tracker/topics (backward compat)
   if (pathname === "/api/services/topic-tracker/topics") {
     const service = ctx.registry.get("topic-tracker") as TopicTrackerIntelService | undefined;
     if (!service) throw new NotFoundError("Service not found: topic-tracker");
@@ -463,6 +463,75 @@ async function handleRoute(
     if (method === "DELETE") {
       await service.clearTopics();
       return { ok: true, action: "cleared" };
+    }
+  }
+
+  // Topic tracker tree routes: /api/services/topic-tracker/trees
+  if (pathname === "/api/services/topic-tracker/trees") {
+    const service = ctx.registry.get("topic-tracker") as TopicTrackerIntelService | undefined;
+    if (!service) throw new NotFoundError("Service not found: topic-tracker");
+    if (method === "GET") return service.getTrees();
+    if (method === "POST") {
+      const topic = String(body.topic || "").trim();
+      const preset = String(body.preset || "custom");
+      if (!topic) throw new Error("Missing 'topic' field");
+      return service.createTree(topic, preset as import("../shared/types/task.js").TopicPreset);
+    }
+  }
+
+  // Single tree: /api/services/topic-tracker/trees/:treeId
+  const treeMatch = pathname.match(/^\/api\/services\/topic-tracker\/trees\/([^/]+)$/);
+  if (treeMatch) {
+    const service = ctx.registry.get("topic-tracker") as TopicTrackerIntelService | undefined;
+    if (!service) throw new NotFoundError("Service not found: topic-tracker");
+    const treeId = treeMatch[1];
+    if (method === "GET") {
+      const tree = await service.getTree(treeId);
+      if (!tree) throw new NotFoundError(`Tree not found: ${treeId}`);
+      return tree;
+    }
+    if (method === "DELETE") {
+      await service.deleteTree(treeId);
+      return { ok: true, treeId, action: "deleted" };
+    }
+  }
+
+  // Tree branches: /api/services/topic-tracker/trees/:treeId/branches
+  const branchesMatch = pathname.match(/^\/api\/services\/topic-tracker\/trees\/([^/]+)\/branches$/);
+  if (branchesMatch && method === "POST") {
+    const service = ctx.registry.get("topic-tracker") as TopicTrackerIntelService | undefined;
+    if (!service) throw new NotFoundError("Service not found: topic-tracker");
+    const treeId = branchesMatch[1];
+    const label = String(body.label || "").trim();
+    const description = String(body.description || "").trim();
+    const parentBranchId = body.parentBranchId ? String(body.parentBranchId) : undefined;
+    if (!label) throw new Error("Missing 'label' field");
+    if (!description) throw new Error("Missing 'description' field");
+    const branch = await service.addBranch(treeId, label, description, parentBranchId);
+    if (!branch) throw new NotFoundError(`Tree or parent branch not found`);
+    return branch;
+  }
+
+  // Single branch: /api/services/topic-tracker/trees/:treeId/branches/:branchId
+  const branchMatch = pathname.match(/^\/api\/services\/topic-tracker\/trees\/([^/]+)\/branches\/([^/]+)$/);
+  if (branchMatch) {
+    const service = ctx.registry.get("topic-tracker") as TopicTrackerIntelService | undefined;
+    if (!service) throw new NotFoundError("Service not found: topic-tracker");
+    const treeId = branchMatch[1];
+    const branchId = branchMatch[2];
+    if (method === "DELETE") {
+      const removed = await service.removeBranch(treeId, branchId);
+      if (!removed) throw new NotFoundError(`Branch not found: ${branchId}`);
+      return { ok: true, treeId, branchId, action: "removed" };
+    }
+    if (method === "PUT") {
+      const status = String(body.status || "").trim();
+      if (!status || !["active", "paused", "stopped"].includes(status)) {
+        throw new Error("Missing or invalid 'status' field (active|paused|stopped)");
+      }
+      const updated = await service.updateBranchStatus(treeId, branchId, status as "active" | "paused" | "stopped");
+      if (!updated) throw new NotFoundError(`Branch not found: ${branchId}`);
+      return { ok: true, treeId, branchId, status };
     }
   }
 

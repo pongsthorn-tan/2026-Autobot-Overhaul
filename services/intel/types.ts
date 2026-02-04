@@ -92,6 +92,53 @@ export interface Digest {
   cycleCount: number;
 }
 
+// ── Topic tracker: branching tree structure ────────────────────────
+
+export type BranchStatus = "active" | "paused" | "stopped";
+
+/**
+ * A single branch (dimension) within a tracked topic tree.
+ *
+ * Each branch has:
+ *   - Its own digest (keyed by branchPath in DigestStore)
+ *   - Its own tracking scope (the dimension it focuses on)
+ *   - A status that can be independently paused/stopped
+ *   - Stats from its last cycle
+ */
+export interface TrackerBranch {
+  id: string;              // kebab-case identifier, e.g. "china"
+  label: string;           // display name, e.g. "China"
+  description: string;     // what this branch tracks, e.g. "US-China tariffs, trade negotiations, tech restrictions"
+  status: BranchStatus;
+  createdAt: string;
+  lastCycleAt: string | null;
+  lastCycleHadFindings: boolean;
+  totalCycles: number;
+  children: TrackerBranch[];  // nested sub-branches
+}
+
+/**
+ * A tracked topic tree. The root is the main topic.
+ * First-level children are the dimension branches.
+ * Branches can nest further if needed.
+ *
+ * Example:
+ *   Trade War (root)
+ *   ├── China — tariffs, tech restrictions, negotiations
+ *   ├── India — trade agreements, manufacturing shifts
+ *   ├── Europe — EU trade policy, auto tariffs
+ *   └── Asia Pacific — ASEAN, Japan, Korea supply chains
+ */
+export interface TrackerTree {
+  id: string;              // topic key, e.g. "trade-war"
+  topic: string;           // root topic, e.g. "Trade War"
+  preset: TopicPreset;
+  branches: TrackerBranch[];
+  createdAt: string;
+  lastCycleAt: string | null;
+  totalCycles: number;
+}
+
 // ── Research-specific: adaptive todo list ──────────────────────────
 
 export interface ResearchStep {
