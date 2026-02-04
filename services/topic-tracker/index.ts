@@ -88,7 +88,7 @@ export class TopicTrackerService extends BaseService {
         await this.runTask({
           label: `track: ${topic}`,
           prompt: buildPrompt(topic, "custom"),
-          maxTurns: 5,
+          maxTurns: 15,
         });
       }
       await this.completeRun("completed");
@@ -124,7 +124,7 @@ export class TopicTrackerService extends BaseService {
     await this.runTask({
       label: `track: ${p.topic}`,
       prompt,
-      maxTurns: 5,
+      maxTurns: 15,
       modelOverride: ctx.model,
       serviceIdOverride: ctx.budgetKey,
       onProgress: ctx.onProgress,
