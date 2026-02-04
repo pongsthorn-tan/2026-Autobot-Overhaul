@@ -38,10 +38,7 @@ AI-powered autonomous task scheduling system that runs, monitors, and self-impro
 │   ├── claude-runner/       # spawnClaudeTask(): spawn Claude CLI, capture session
 │   ├── config/              # loadConfig(): env vars + .env file
 │   └── utils/               # generateTaskId(): slug + timestamp
-├── scripts/                 # Admin CLI scripts
-├── Dockerfile               # Multi-stage: backend build → webui build → production
-├── docker-compose.yml       # autobot + nginx containers with named volumes
-└── nginx.conf               # Reverse proxy: /api/* → 3000, /* → 3001
+└── scripts/                 # Admin CLI scripts
 ```
 
 ## Module Responsibilities
@@ -99,7 +96,7 @@ AI-powered autonomous task scheduling system that runs, monitors, and self-impro
 
 - **Backend** — TypeScript, Node.js, node-cron
 - **Frontend** — Next.js 14, React 18 (separate package in `web-ui/`)
-- **Deployment** — Docker, nginx, Cloudflare Tunnel
+- **Deployment** — Cloudflare Tunnel
 - **AI Runtime** — Claude CLI (spawned per task)
 - **Cost Tracking** — ccusage CLI
 - **Logging** — Structured JSON logs
@@ -120,9 +117,6 @@ npm start
 
 # Run web UI in dev mode (separate terminal)
 cd web-ui && npm run dev
-
-# Docker deployment
-docker compose up -d --build
 ```
 
 ## Development Conventions
