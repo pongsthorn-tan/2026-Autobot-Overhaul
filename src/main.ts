@@ -11,9 +11,9 @@ import { SchedulingEngine } from "../scheduler/engine/index.js";
 import { SchedulerAPI } from "../scheduler/api/index.js";
 import { TaskExecutor } from "../scheduler/task-executor/index.js";
 import { TaskStore } from "../shared/task-store/index.js";
-import { ResearchService } from "../services/research/index.js";
-import { TopicTrackerService } from "../services/topic-tracker/index.js";
-import { ReportService } from "../services/report/index.js";
+import { ResearchIntelService } from "../services/intel/research.js";
+import { TopicTrackerIntelService } from "../services/intel/topic-tracker.js";
+import { ReportIntelService } from "../services/intel/report.js";
 import { CodeTaskService } from "../services/code-task/index.js";
 import { SelfImproveService } from "../services/self-improve/index.js";
 import { BaseService } from "../services/base-service.js";
@@ -104,9 +104,9 @@ async function main(): Promise<void> {
   const schedulerAPI = new SchedulerAPI(engine, registry);
 
   // Register services
-  const research = new ResearchService(costTracker);
-  const topicTracker = new TopicTrackerService(costTracker);
-  const report = new ReportService(costTracker);
+  const research = new ResearchIntelService(costTracker);
+  const topicTracker = new TopicTrackerIntelService(costTracker);
+  const report = new ReportIntelService(costTracker);
   const codeTask = new CodeTaskService(costTracker);
   const selfImprove = new SelfImproveService(costTracker);
 
@@ -434,7 +434,7 @@ async function handleRoute(
 
   // Service input routes: /api/services/research/topics
   if (pathname === "/api/services/research/topics") {
-    const service = ctx.registry.get("research") as ResearchService | undefined;
+    const service = ctx.registry.get("research") as ResearchIntelService | undefined;
     if (!service) throw new NotFoundError("Service not found: research");
     if (method === "GET") return service.getTopics();
     if (method === "POST") {
@@ -451,7 +451,7 @@ async function handleRoute(
 
   // Service input routes: /api/services/topic-tracker/topics
   if (pathname === "/api/services/topic-tracker/topics") {
-    const service = ctx.registry.get("topic-tracker") as TopicTrackerService | undefined;
+    const service = ctx.registry.get("topic-tracker") as TopicTrackerIntelService | undefined;
     if (!service) throw new NotFoundError("Service not found: topic-tracker");
     if (method === "GET") return service.getTopics();
     if (method === "POST") {

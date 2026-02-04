@@ -1,12 +1,22 @@
-import { ServiceConfig } from "../../shared/types/service.js";
+/**
+ * ReportIntelService — single-pass, stateless report generation.
+ *
+ * User provides what they want reported on → prompt builder converts
+ * that intent into a detailed report prompt → single runTask → structured JSON.
+ *
+ * No state between runs. Each invocation is independent.
+ */
+
+import { ServiceConfig, ClaudeModel } from "../../shared/types/service.js";
 import { TaskParams, ReportTaskParams } from "../../shared/types/task.js";
 import { BaseService, StandaloneContext } from "../base-service.js";
+import { buildReportPrompt } from "./prompt-builder.js";
 
-export class ReportService extends BaseService {
+export class ReportIntelService extends BaseService {
   readonly config: ServiceConfig = {
     id: "report",
     name: "Report",
-    description: "Generates and delivers scheduled reports. Aggregates data from other services into formatted outputs.",
+    description: "Generates structured reports from user intent. Single-pass, stateless — each run is independent.",
     budget: 0,
   };
 
@@ -19,10 +29,13 @@ export class ReportService extends BaseService {
 
     await this.beginRun();
     try {
+      const prompt = buildReportPrompt(
+        "Generate a comprehensive system status report summarizing all service activity, costs, and performance metrics.",
+      );
       await this.runTask({
         label: "system-report",
-        prompt: "Generate a comprehensive system status report summarizing all service activity, costs, and performance metrics.",
-        maxTurns: 3,
+        prompt,
+        maxTurns: 5,
       });
       await this.completeRun("completed");
     } catch (err) {
@@ -35,10 +48,11 @@ export class ReportService extends BaseService {
 
   protected async executeStandalone(params: TaskParams, ctx: StandaloneContext): Promise<void> {
     const p = params as ReportTaskParams;
+    const prompt = buildReportPrompt(p.prompt);
     await this.runTask({
       label: "standalone-report",
-      prompt: p.prompt,
-      maxTurns: 3,
+      prompt,
+      maxTurns: 5,
       modelOverride: ctx.model,
       serviceIdOverride: ctx.budgetKey,
     });
