@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from "uuid";
 import { StandaloneTask, CreateTaskInput, TaskServiceType, TopicTrackerTaskParams, SpendingLimit } from "../../shared/types/task.js";
 import { Schedule, ScheduleConfig, ScheduleSlot } from "../../shared/types/scheduler.js";
 import { TaskStore } from "../../shared/task-store/index.js";
@@ -8,6 +7,7 @@ import { BudgetManager } from "../../cost-control/budget/index.js";
 import { CostTracker } from "../../cost-control/tracker/index.js";
 import { BaseService, ProgressCallback } from "../../services/base-service.js";
 import { createLogger } from "../../shared/logger/index.js";
+import { generateTaskId } from "../../shared/utils/index.js";
 
 const logger = createLogger("task-executor");
 
@@ -18,6 +18,11 @@ const SERVICE_TYPE_TO_ID: Record<TaskServiceType, string> = {
   "topic-tracker": "topic-tracker",
   "self-improve": "self-improve",
 };
+
+function extractLabel(params: Record<string, unknown>): string {
+  const raw = String(params.prompt ?? params.topic ?? params.description ?? "task");
+  return raw.slice(0, 60);
+}
 
 export class TaskExecutor {
   private progressCallbacks = new Map<string, ProgressCallback>();
@@ -39,7 +44,7 @@ export class TaskExecutor {
   }
 
   async createAndRun(input: CreateTaskInput, onCreated?: (taskId: string) => void): Promise<StandaloneTask> {
-    const taskId = uuidv4();
+    const taskId = generateTaskId(input.serviceType, extractLabel(input.params as unknown as Record<string, unknown>));
     const budgetKey = `task:${taskId}`;
 
     const task: StandaloneTask = {
@@ -85,7 +90,7 @@ export class TaskExecutor {
   }
 
   async createAndSchedule(input: CreateTaskInput, schedule: ScheduleConfig): Promise<StandaloneTask> {
-    const taskId = uuidv4();
+    const taskId = generateTaskId(input.serviceType, extractLabel(input.params as unknown as Record<string, unknown>));
     const budgetKey = `task:${taskId}`;
 
     const task: StandaloneTask = {
