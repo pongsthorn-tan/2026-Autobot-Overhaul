@@ -21,9 +21,10 @@ import { ClaudeModel } from "../shared/types/service.js";
 import { CreateTaskInput } from "../shared/types/task.js";
 import { Schedule, ScheduleConfig, ScheduleSlot } from "../shared/types/scheduler.js";
 import { spawnClaudeTask } from "../shared/claude-runner/index.js";
+import { TaskProgressEvent, ProgressCallback } from "../services/base-service.js";
 import { v4 as uuidv4 } from "uuid";
-import { createServer } from "http";
-import OpenAI from "openai";
+import { createServer, ServerResponse } from "http";
+
 
 const logger = createLogger("system");
 
@@ -35,6 +36,8 @@ interface RefineJob {
   sessionId?: string;
   error?: string;
   createdAt: number;
+  fullPrompt?: string;
+  model?: string;
 }
 
 const refineJobs = new Map<string, RefineJob>();
@@ -46,6 +49,42 @@ setInterval(() => {
     if (job.createdAt < cutoff) refineJobs.delete(id);
   }
 }, 5 * 60 * 1000);
+
+// SSE streaming infrastructure
+const sseClients = new Map<string, ServerResponse[]>();
+
+function sseWrite(res: ServerResponse, event: object): void {
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+function sseBroadcast(key: string, event: object): void {
+  const clients = sseClients.get(key);
+  if (!clients) return;
+  for (const res of clients) {
+    sseWrite(res, event);
+  }
+}
+
+function sseRegister(key: string, res: ServerResponse): void {
+  if (!sseClients.has(key)) {
+    sseClients.set(key, []);
+  }
+  sseClients.get(key)!.push(res);
+  res.on("close", () => {
+    const clients = sseClients.get(key);
+    if (clients) {
+      const idx = clients.indexOf(res);
+      if (idx !== -1) clients.splice(idx, 1);
+      if (clients.length === 0) sseClients.delete(key);
+    }
+  });
+}
+
+function createTaskProgressCallback(taskId: string): ProgressCallback {
+  return (event: TaskProgressEvent) => {
+    sseBroadcast(`task:${taskId}`, event);
+  };
+}
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -125,7 +164,6 @@ async function main(): Promise<void> {
     const url = new URL(req.url ?? "/", `http://${host}:${port}`);
     const method = req.method ?? "GET";
 
-    res.setHeader("Content-Type", "application/json");
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -135,6 +173,36 @@ async function main(): Promise<void> {
       res.end();
       return;
     }
+
+    // SSE endpoint: /api/tasks/:taskId/stream
+    const taskStreamMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/stream$/);
+    if (taskStreamMatch && method === "GET") {
+      const taskId = taskStreamMatch[1];
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+      res.write(`data: ${JSON.stringify({ type: "connected", taskId })}\n\n`);
+      sseRegister(`task:${taskId}`, res);
+      return;
+    }
+
+    // SSE endpoint: /api/tasks/refine-prompt/:jobId/stream
+    const refineStreamMatch = url.pathname.match(/^\/api\/tasks\/refine-prompt\/([^/]+)\/stream$/);
+    if (refineStreamMatch && method === "GET") {
+      const jobId = refineStreamMatch[1];
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+      res.write(`data: ${JSON.stringify({ type: "connected", jobId })}\n\n`);
+      sseRegister(`refine:${jobId}`, res);
+      return;
+    }
+
+    res.setHeader("Content-Type", "application/json");
 
     try {
       const body = await parseBody(req);
@@ -212,69 +280,34 @@ async function handleRoute(
   const pathname = url.pathname;
 
   // Task routes: /api/tasks
-  // Refine prompt: start async job (Claude) or sync call (OpenAI)
+  // Refine prompt: start async Claude CLI job
   if (pathname === "/api/tasks/refine-prompt" && method === "POST") {
     const prompt = String(body.prompt || "").trim();
-    const provider = String(body.provider || "claude") as "claude" | "openai";
     const model = String(body.model || "sonnet");
-    const maxTokens = Math.min(Math.max(Number(body.maxTokens) || 2048, 256), 16384);
     if (!prompt) throw new Error("Missing 'prompt' field");
 
     const systemPrompt =
       "Refine this rough description into a clear, detailed report prompt. Output ONLY the refined prompt, nothing else.";
 
-    // OpenAI: synchronous path — call API directly and return result
-    if (provider === "openai") {
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-
-      const openai = new OpenAI({ apiKey });
-      const completion = await openai.chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: maxTokens,
-      });
-
-      const refinedPrompt = completion.choices[0]?.message?.content?.trim() ?? "";
-      const usage = completion.usage;
-      const promptTokens = usage?.prompt_tokens ?? 0;
-      const completionTokens = usage?.completion_tokens ?? 0;
-
-      // Estimate cost based on model (per 1M tokens pricing)
-      const OPENAI_PRICING: Record<string, { input: number; output: number }> = {
-        "gpt-5-nano": { input: 0.05, output: 0.40 },
-        "gpt-5-mini": { input: 0.25, output: 2.00 },
-        "gpt-5.2": { input: 1.75, output: 14.00 },
-      };
-      const pricing = OPENAI_PRICING[model] ?? { input: 1.75, output: 14.0 };
-      const cost =
-        (promptTokens / 1_000_000) * pricing.input +
-        (completionTokens / 1_000_000) * pricing.output;
-
-      return {
-        provider: "openai",
-        refinedPrompt,
-        cost,
-        tokensUsed: { input: promptTokens, output: completionTokens },
-      };
-    }
-
-    // Claude: async job pattern (existing behavior)
+    const fullPrompt = `${systemPrompt}\n\n${prompt}`;
     const jobId = uuidv4();
-    refineJobs.set(jobId, { status: "running", createdAt: Date.now() });
+    refineJobs.set(jobId, {
+      status: "running",
+      createdAt: Date.now(),
+      fullPrompt,
+      model,
+    });
 
     const budgetKey = `refine:${jobId}`;
     const workingDir = `tasks/refinements/${jobId}`;
 
     ctx.budgetManager.allocate(budgetKey, 0.5).then(() =>
       spawnClaudeTask({
-        prompt: `${systemPrompt}\n\n${prompt}`,
+        prompt: fullPrompt,
         workingDir,
         maxTurns: 1,
         model: model as ClaudeModel,
+        onStdoutChunk: (text) => sseBroadcast(`refine:${jobId}`, { type: "chunk", text }),
       })
     ).then(async (result) => {
       await ctx.costTracker.captureAndRecordCost({
@@ -292,16 +325,23 @@ async function handleRoute(
         cost,
         sessionId: result.sessionId,
         createdAt: Date.now(),
+        fullPrompt,
+        model,
       });
+      sseBroadcast(`refine:${jobId}`, { type: "done", refinedPrompt: result.stdout.trim(), cost });
     }).catch((err) => {
+      const errorMsg = err instanceof Error ? err.message : String(err);
       refineJobs.set(jobId, {
         status: "errored",
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMsg,
         createdAt: Date.now(),
+        fullPrompt,
+        model,
       });
+      sseBroadcast(`refine:${jobId}`, { type: "error", error: errorMsg });
     });
 
-    return { provider: "claude", jobId };
+    return { jobId, fullPrompt, model };
   }
 
   // Refine prompt: poll job status
@@ -317,6 +357,8 @@ async function handleRoute(
       cost: job.cost,
       sessionId: job.sessionId,
       error: job.error,
+      fullPrompt: job.fullPrompt,
+      model: job.model,
     };
   }
 
@@ -341,8 +383,10 @@ async function handleRoute(
 
     if (runNow) {
       const task = await ctx.taskExecutor.createAndRun(taskInput);
+      // Register SSE progress callback for this task
+      ctx.taskExecutor.setProgressCallback(task.taskId, createTaskProgressCallback(task.taskId));
       return task;
-    } else if (input.schedule && input.schedule.type === "scheduled") {
+    } else if (input.schedule && (input.schedule.type === "scheduled" || input.schedule.type === "interval")) {
       const task = await ctx.taskExecutor.createAndSchedule(taskInput, input.schedule as ScheduleConfig);
       return task;
     } else {
@@ -366,6 +410,21 @@ async function handleRoute(
     const taskId = taskDetailMatch[1];
     await ctx.taskExecutor.deleteTask(taskId);
     return { ok: true, taskId, action: "deleted" };
+  }
+
+  // GET /api/tasks/:taskId/output — get task output
+  const taskOutputMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/output$/);
+  if (taskOutputMatch && method === "GET") {
+    const taskId = taskOutputMatch[1];
+    const task = await ctx.taskExecutor.getTask(taskId);
+    if (!task) throw new NotFoundError(`Task not found: ${taskId}`);
+
+    return {
+      taskId,
+      serviceType: task.serviceType,
+      status: task.status,
+      output: task.output,
+    };
   }
 
   // GET /api/services
@@ -579,7 +638,7 @@ async function handleRoute(
 
   // GET /api/costs
   if (pathname === "/api/costs" && method === "GET") {
-    return ctx.costControlAPI.getAllTaskSummaries();
+    return ctx.costControlAPI.getServiceCostSummaries();
   }
 
   // Cost-specific routes: /api/costs/:serviceId/*
@@ -588,11 +647,39 @@ async function handleRoute(
     const serviceId = costMatch[1];
     const action = costMatch[2];
 
+    // GET /api/costs/:serviceId → CostSummary shape for frontend
     if (!action && method === "GET") {
-      return ctx.costControlAPI.getServiceReport(serviceId);
+      const report = await ctx.costControlAPI.getServiceReport(serviceId);
+      const entries = report.entries;
+      const taskIds = new Set(entries.map((e) => e.taskId));
+      const totalTokens = entries.reduce(
+        (sum, e) => sum + e.tokensInput + e.tokensOutput, 0,
+      );
+      return {
+        serviceId: report.serviceId,
+        serviceName: report.serviceId,
+        totalCost: report.totalSpent,
+        totalTokens,
+        taskCount: taskIds.size,
+        iterationCount: entries.length,
+      };
     }
+
+    // GET /api/costs/:serviceId/tasks → TaskCost[] shape for frontend
     if (action === "tasks" && method === "GET") {
-      return ctx.costControlAPI.getTaskDetails(serviceId);
+      const summaries = await ctx.costControlAPI.getTaskDetails(serviceId);
+      return summaries.map((s) => ({
+        taskId: s.taskId,
+        taskName: s.taskLabel,
+        cost: s.totalCost,
+        tokens: s.entries.reduce(
+          (sum, e) => sum + e.tokensInput + e.tokensOutput, 0,
+        ),
+        iterations: s.iterationCount,
+        lastRun: s.entries.length > 0
+          ? s.entries[s.entries.length - 1].timestamp
+          : undefined,
+      }));
     }
   }
 

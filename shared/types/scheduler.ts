@@ -18,7 +18,8 @@ export interface ScheduleSlot {
 
 export type ScheduleConfig =
   | { type: "once" }
-  | { type: "scheduled"; slots: ScheduleSlot[] };
+  | { type: "scheduled"; slots: ScheduleSlot[] }
+  | { type: "interval"; intervalHours: number; maxCycles?: number };
 
 export interface ScheduledService {
   serviceId: string;

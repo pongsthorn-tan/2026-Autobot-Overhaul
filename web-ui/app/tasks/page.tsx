@@ -34,6 +34,7 @@ function TasksPageInner() {
   const [tasks, setTasks] = useState<StandaloneTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -53,8 +54,10 @@ function TasksPageInner() {
   const handleSubmit = async (input: CreateTaskInput) => {
     setLoading(true);
     setError(null);
+    setActiveTaskId(null);
     try {
-      await createTask(input);
+      const task = await createTask(input);
+      setActiveTaskId(task.taskId);
       await fetchTasks();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create task');
@@ -109,7 +112,7 @@ function TasksPageInner() {
           {activeTab === 'report' && <TaskFormReport onSubmit={handleSubmit} loading={loading} />}
           {activeTab === 'research' && <TaskFormResearch onSubmit={handleSubmit} loading={loading} />}
           {activeTab === 'code-task' && <TaskFormCodeTask onSubmit={handleSubmit} loading={loading} />}
-          {activeTab === 'topic-tracker' && <TaskFormTopicTracker onSubmit={handleSubmit} loading={loading} />}
+          {activeTab === 'topic-tracker' && <TaskFormTopicTracker onSubmit={handleSubmit} loading={loading} activeTaskId={activeTaskId} />}
           {activeTab === 'self-improve' && <TaskFormSelfImprove onSubmit={handleSubmit} loading={loading} />}
         </div>
       </div>

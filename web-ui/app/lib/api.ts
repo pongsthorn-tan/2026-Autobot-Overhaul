@@ -145,7 +145,9 @@ export interface StandaloneTask {
   startedAt: string | null;
   completedAt: string | null;
   costSpent: number;
+  cyclesCompleted?: number;
   error: string | null;
+  output: string | null;
 }
 
 export interface CreateTaskInput {
@@ -179,19 +181,32 @@ export interface ScheduleSlot {
 
 export type ScheduleConfig =
   | { type: 'once' }
-  | { type: 'scheduled'; slots: ScheduleSlot[] };
+  | { type: 'scheduled'; slots: ScheduleSlot[] }
+  | { type: 'interval'; intervalHours: number; maxCycles?: number };
 
-// Prompt refinement (dual provider: Claude async job or OpenAI sync)
+// Topic tracker types
 
-export type RefineProvider = 'claude' | 'openai';
-export type OpenAIModel = 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2';
+export type TopicPreset = 'company-news' | 'market-crypto' | 'election-politics' | 'tech-launch' | 'custom';
+
+export interface SpendingLimit {
+  maxPerWindow: number;
+  windowHours: number;
+}
+
+export interface TopicTrackerTaskParams {
+  serviceType: 'topic-tracker';
+  topic: string;
+  preset: TopicPreset;
+  maxCycles?: number;
+  spendingLimit?: SpendingLimit;
+}
+
+// Prompt refinement (Claude CLI async job)
 
 export interface RefineStartResponse {
-  provider: RefineProvider;
-  jobId?: string;           // claude path
-  refinedPrompt?: string;   // openai path
-  cost?: number;            // openai path
-  tokensUsed?: { input: number; output: number }; // openai path
+  jobId: string;
+  fullPrompt?: string;
+  model?: string;
 }
 
 export interface RefineJobPollResponse {
@@ -201,17 +216,73 @@ export interface RefineJobPollResponse {
   cost?: number;
   sessionId?: string;
   error?: string;
+  fullPrompt?: string;
+  model?: string;
 }
 
 export function startRefinePrompt(
   prompt: string,
-  provider: RefineProvider,
   model: string,
-  maxTokens: number,
 ): Promise<RefineStartResponse> {
-  return apiPost<RefineStartResponse>('/api/tasks/refine-prompt', { prompt, provider, model, maxTokens });
+  return apiPost<RefineStartResponse>('/api/tasks/refine-prompt', { prompt, model });
 }
 
 export function pollRefinePrompt(jobId: string): Promise<RefineJobPollResponse> {
   return apiFetch<RefineJobPollResponse>(`/api/tasks/refine-prompt/${jobId}`);
+}
+
+// Task detail fetch
+export function getTask(taskId: string): Promise<StandaloneTask> {
+  return apiFetch<StandaloneTask>(`/api/tasks/${taskId}`);
+}
+
+// SSE Streaming
+
+export interface TaskStreamEvent {
+  type: 'connected' | 'prompt' | 'chunk' | 'step' | 'cost' | 'done' | 'error';
+  taskId?: string;
+  prompt?: string;
+  model?: string;
+  text?: string;
+  step?: { index: number; label: string; status: string };
+  cost?: number;
+  output?: string;
+  error?: string;
+}
+
+export interface RefineStreamEvent {
+  type: 'connected' | 'chunk' | 'done' | 'error';
+  jobId?: string;
+  text?: string;
+  refinedPrompt?: string;
+  cost?: number;
+  error?: string;
+}
+
+export function streamTask(taskId: string, onEvent: (e: TaskStreamEvent) => void): () => void {
+  const url = `${API_URL}/api/tasks/${taskId}/stream`;
+  const es = new EventSource(url);
+  es.onmessage = (msg) => {
+    try {
+      onEvent(JSON.parse(msg.data));
+    } catch { /* ignore parse errors */ }
+  };
+  es.onerror = () => {
+    es.close();
+  };
+  return () => es.close();
+}
+
+export function streamRefinePrompt(jobId: string, onEvent: (e: RefineStreamEvent) => void): () => void {
+  const url = `${API_URL}/api/tasks/refine-prompt/${jobId}/stream`;
+  const es = new EventSource(url);
+  es.onmessage = (msg) => {
+    try {
+      onEvent(JSON.parse(msg.data));
+    } catch { /* ignore parse errors */ }
+  };
+  es.onerror = () => {
+    es.close();
+  };
+  return () => es.close();
 }
