@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import { formatDate, formatTime } from '../../lib/format-date';
 import {
   apiFetch,
   apiPost,
@@ -323,12 +324,12 @@ export default function ServiceDetailPage() {
 
           {service.lastRun && (
             <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Last run: {new Date(service.lastRun).toLocaleString()}
+              Last run: {formatDate(service.lastRun)}
             </div>
           )}
           {service.nextRun && (
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Next run: {new Date(service.nextRun).toLocaleString()}
+              Next run: {formatDate(service.nextRun)}
             </div>
           )}
         </div>
@@ -583,7 +584,7 @@ export default function ServiceDetailPage() {
               <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                 {nextRuns.map((time, idx) => (
                   <li key={idx} style={{ marginBottom: '4px' }}>
-                    {new Date(time).toLocaleString()}
+                    {formatDate(time)}
                   </li>
                 ))}
               </ol>
@@ -616,7 +617,7 @@ export default function ServiceDetailPage() {
             logs.slice(0, 15).map((log, idx) => (
               <div key={idx} className="log-entry">
                 <span className="log-timestamp">
-                  {new Date(log.timestamp).toLocaleTimeString()}
+                  {formatTime(log.timestamp)}
                 </span>
                 <span className={`log-level-${log.level}`} style={{ marginRight: '8px' }}>
                   [{log.level}]

@@ -1,6 +1,7 @@
 'use client';
 
 import { type ReactNode } from 'react';
+import { formatDate } from '../lib/format-date';
 
 // Inline types to avoid cross-package imports
 interface ReportSection {
@@ -21,17 +22,6 @@ interface StructuredReport {
   generatedAt: string;
   sections: ReportSection[];
   conclusion?: string;
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mmm = months[d.getMonth()];
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${dd}/${mmm}/${yyyy} ${hh}:${mm}`;
 }
 
 function extractLinks(report: StructuredReport): { text: string; url: string }[] {

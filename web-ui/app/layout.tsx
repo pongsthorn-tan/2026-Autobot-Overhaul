@@ -61,7 +61,7 @@ export default function RootLayout({
               color: 'var(--text-muted)',
             }}
           >
-            v{process.env.NEXT_PUBLIC_BUILD_TAG || 'dev'}
+            {process.env.NEXT_PUBLIC_BUILD_TAG || 'dev'}
           </div>
         </nav>
         <main>{children}</main>

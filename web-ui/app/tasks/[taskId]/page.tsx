@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { getTask, type StandaloneTask } from '../../lib/api';
+import { formatDate } from '../../lib/format-date';
 import ReportRenderer from '../../components/report-renderer';
 import LiveLog from '../../components/live-log';
 
@@ -125,8 +126,8 @@ export default function TaskDetailPage() {
         )}
       </div>
       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '24px' }}>
-        Created {new Date(task.createdAt).toLocaleString()}
-        {task.completedAt && ` \u00B7 Completed ${new Date(task.completedAt).toLocaleString()}`}
+        Created {formatDate(task.createdAt)}
+        {task.completedAt && ` \u00B7 Completed ${formatDate(task.completedAt)}`}
       </div>
 
       {/* Error message */}

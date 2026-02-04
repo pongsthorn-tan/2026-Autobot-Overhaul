@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { apiFetch, type Service, type Budget, type StandaloneTask } from './lib/api';
+import { formatDateShort } from './lib/format-date';
 import LiveLog from './components/live-log';
 import ReportRenderer, { parseReport } from './components/report-renderer';
 
@@ -369,7 +370,7 @@ export default function DashboardPage() {
                     </span>
                     <div style={{ flex: 1, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                       {service.nextRun
-                        ? `Next: ${new Date(service.nextRun).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                        ? `Next: ${formatDateShort(service.nextRun)}`
                         : 'Not scheduled'}
                     </div>
                     {budget && (

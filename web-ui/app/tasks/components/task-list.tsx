@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { type StandaloneTask, type TaskServiceType, deleteTask } from '../../lib/api';
+import { formatDate } from '../../lib/format-date';
 
 interface TaskListProps {
   tasks: StandaloneTask[];
@@ -106,7 +107,7 @@ export default function TaskList({ tasks, serviceType, onRefresh }: TaskListProp
                   {getTaskSummary(task)}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  {task.model} &middot; ${task.costSpent.toFixed(2)} spent &middot; {new Date(task.createdAt).toLocaleString()}
+                  {task.model} &middot; ${task.costSpent.toFixed(2)} spent &middot; {formatDate(task.createdAt)}
                   {getCycleProgress(task) && (
                     <span style={{ marginLeft: '8px', color: 'var(--accent-blue, #3b82f6)' }}>
                       {getCycleProgress(task)}

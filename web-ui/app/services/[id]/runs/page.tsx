@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { apiFetch, type RunRecord } from '../../../lib/api';
+import { formatDate, formatTime } from '../../../lib/format-date';
 
 export default function ExecutionHistoryPage() {
   const params = useParams();
@@ -120,7 +121,7 @@ export default function ExecutionHistoryPage() {
                   <span>{run.tasks.length} task{run.tasks.length !== 1 ? 's' : ''}</span>
                   <span>{run.totalTokens.toLocaleString()} tokens</span>
                   <span>${run.totalCost.toFixed(4)}</span>
-                  <span>{new Date(run.startedAt).toLocaleString()}</span>
+                  <span>{formatDate(run.startedAt)}</span>
                   <span style={{ fontSize: '1rem' }}>{expandedRun === run.runId ? '\u25B2' : '\u25BC'}</span>
                 </div>
               </div>
@@ -163,7 +164,7 @@ export default function ExecutionHistoryPage() {
                           <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
                             <span>{task.tokensUsed.toLocaleString()} tokens</span>
                             <span>${task.costEstimate.toFixed(4)}</span>
-                            <span>{new Date(task.completedAt).toLocaleTimeString()}</span>
+                            <span>{formatTime(task.completedAt)}</span>
                           </div>
                           {task.output && (
                             <details>

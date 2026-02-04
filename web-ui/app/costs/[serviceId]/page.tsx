@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { apiFetch, type CostSummary, type TaskCost } from '../../lib/api';
+import { formatDate } from '../../lib/format-date';
 
 export default function ServiceCostPage() {
   const params = useParams();
@@ -127,7 +128,7 @@ export default function ServiceCostPage() {
                           color: 'var(--text-secondary)',
                         }}
                       >
-                        {task.lastRun ? new Date(task.lastRun).toLocaleString() : '-'}
+                        {task.lastRun ? formatDate(task.lastRun) : '-'}
                       </td>
                     </tr>
                   ))}
