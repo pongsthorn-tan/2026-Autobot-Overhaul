@@ -120,6 +120,15 @@ export default function TaskList({ tasks, serviceType, onRefresh }: TaskListProp
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                {(task.status === 'running' || task.status === 'pending') && (
+                  <a
+                    href={`/tasks/${task.taskId}`}
+                    className="btn btn-primary btn-sm"
+                    style={{ fontSize: '0.75rem', textDecoration: 'none' }}
+                  >
+                    Live Log
+                  </a>
+                )}
                 {hasOutput && (task.serviceType === 'report' || task.serviceType === 'research' || task.serviceType === 'topic-tracker') && (
                   <a
                     href={`/tasks/${task.taskId}`}
