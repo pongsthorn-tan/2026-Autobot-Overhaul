@@ -1,7 +1,7 @@
 import { ClaudeModel } from "./service.js";
 import { Schedule, ScheduleConfig } from "./scheduler.js";
 
-export type StandaloneTaskStatus = "pending" | "scheduled" | "running" | "completed" | "errored";
+export type StandaloneTaskStatus = "pending" | "scheduled" | "running" | "completed" | "errored" | "paused";
 export type TaskServiceType = "report" | "research" | "code-task" | "topic-tracker" | "self-improve";
 
 export interface ReportTaskParams {
@@ -76,4 +76,11 @@ export interface CreateTaskInput {
   budget: number;
   runNow: boolean;
   schedule?: ScheduleConfig;
+}
+
+export interface UpdateTaskInput {
+  params?: Partial<TaskParams>;
+  model?: ClaudeModel;
+  budget?: number;
+  schedule?: ScheduleConfig | null; // null = remove schedule
 }

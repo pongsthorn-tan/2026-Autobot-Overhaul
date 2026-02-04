@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { type StandaloneTask, type TaskServiceType, deleteTask } from '../../lib/api';
+import { type StandaloneTask, type TaskServiceType, deleteTask, pauseTask, resumeTask } from '../../lib/api';
 import { formatDate } from '../../lib/format-date';
 
 interface TaskListProps {
@@ -24,6 +24,8 @@ function getStatusBadgeClass(status: string): string {
     case 'completed':
       return 'badge badge-stopped';
     case 'scheduled':
+      return 'badge badge-paused';
+    case 'paused':
       return 'badge badge-paused';
     case 'errored':
       return 'badge badge-errored';
@@ -108,7 +110,15 @@ export default function TaskList({ tasks, serviceType, isIntelTab, onRefresh }: 
                 gap: '12px',
               }}
             >
-              <span className={getStatusBadgeClass(task.status)}>{task.status}</span>
+              <span
+                className={getStatusBadgeClass(task.status)}
+                style={task.status === 'paused' ? {
+                  background: 'color-mix(in srgb, #f59e0b 15%, transparent)',
+                  color: '#f59e0b',
+                } : undefined}
+              >
+                {task.status}
+              </span>
               {isIntelTab && INTEL_STYLE_BADGES[task.serviceType] && (
                 <span style={{
                   fontSize: '0.68rem',
@@ -150,6 +160,24 @@ export default function TaskList({ tasks, serviceType, isIntelTab, onRefresh }: 
                   >
                     Live Log
                   </a>
+                )}
+                {task.status === 'scheduled' && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '0.75rem' }}
+                    onClick={async () => { await pauseTask(task.taskId); onRefresh(); }}
+                  >
+                    Pause
+                  </button>
+                )}
+                {task.status === 'paused' && (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    style={{ fontSize: '0.75rem' }}
+                    onClick={async () => { await resumeTask(task.taskId); onRefresh(); }}
+                  >
+                    Resume
+                  </button>
                 )}
                 {hasOutput && (task.serviceType === 'report' || task.serviceType === 'research' || task.serviceType === 'topic-tracker') && (
                   <a

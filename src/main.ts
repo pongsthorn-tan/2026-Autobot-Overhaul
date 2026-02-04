@@ -18,7 +18,7 @@ import { CodeTaskService } from "../services/code-task/index.js";
 import { SelfImproveService } from "../services/self-improve/index.js";
 import { BaseService } from "../services/base-service.js";
 import { ClaudeModel } from "../shared/types/service.js";
-import { CreateTaskInput } from "../shared/types/task.js";
+import { CreateTaskInput, UpdateTaskInput } from "../shared/types/task.js";
 import { Schedule, ScheduleConfig, ScheduleSlot } from "../shared/types/scheduler.js";
 import { spawnClaudeTask } from "../shared/claude-runner/index.js";
 import { TaskProgressEvent, ProgressCallback } from "../services/base-service.js";
@@ -165,7 +165,7 @@ async function main(): Promise<void> {
     const method = req.method ?? "GET";
 
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (method === "OPTIONS") {
@@ -180,8 +180,9 @@ async function main(): Promise<void> {
       const taskId = taskStreamMatch[1];
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
       });
       res.write(`data: ${JSON.stringify({ type: "connected", taskId })}\n\n`);
       sseRegister(`task:${taskId}`, res);
@@ -194,8 +195,9 @@ async function main(): Promise<void> {
       const jobId = refineStreamMatch[1];
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
       });
       res.write(`data: ${JSON.stringify({ type: "connected", jobId })}\n\n`);
 
@@ -419,6 +421,29 @@ async function handleRoute(
     const taskId = taskDetailMatch[1];
     await ctx.taskExecutor.deleteTask(taskId);
     return { ok: true, taskId, action: "deleted" };
+  }
+
+  if (taskDetailMatch && method === "PATCH") {
+    const taskId = taskDetailMatch[1];
+    const updates = body as unknown as UpdateTaskInput;
+    const updated = await ctx.taskExecutor.updateTask(taskId, updates);
+    return updated;
+  }
+
+  // POST /api/tasks/:taskId/pause
+  const taskPauseMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/pause$/);
+  if (taskPauseMatch && method === "POST") {
+    const taskId = taskPauseMatch[1];
+    const updated = await ctx.taskExecutor.pauseTask(taskId);
+    return updated;
+  }
+
+  // POST /api/tasks/:taskId/resume
+  const taskResumeMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/resume$/);
+  if (taskResumeMatch && method === "POST") {
+    const taskId = taskResumeMatch[1];
+    const updated = await ctx.taskExecutor.resumeTask(taskId);
+    return updated;
   }
 
   // GET /api/tasks/:taskId/output — get task output

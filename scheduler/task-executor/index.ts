@@ -1,4 +1,4 @@
-import { StandaloneTask, CreateTaskInput, TaskServiceType, TopicTrackerTaskParams, SpendingLimit } from "../../shared/types/task.js";
+import { StandaloneTask, CreateTaskInput, UpdateTaskInput, TaskServiceType, TopicTrackerTaskParams, SpendingLimit } from "../../shared/types/task.js";
 import { Schedule, ScheduleConfig, ScheduleSlot } from "../../shared/types/scheduler.js";
 import { TaskStore } from "../../shared/task-store/index.js";
 import { ServiceRegistry } from "../registry/index.js";
@@ -132,21 +132,107 @@ export class TaskExecutor {
     return this.taskStore.getById(taskId);
   }
 
-  async deleteTask(taskId: string): Promise<void> {
-    // Unschedule all possible slot keys
+  private unscheduleAllCallbacks(taskId: string): void {
     for (let i = 0; i < 10; i++) {
       this.engine.unscheduleCallback(`task:${taskId}:slot-${i}`);
     }
-    // Unschedule interval key
     this.engine.unscheduleCallback(`task:${taskId}:interval`);
+  }
+
+  async deleteTask(taskId: string): Promise<void> {
+    this.unscheduleAllCallbacks(taskId);
     await this.taskStore.delete(taskId);
+  }
+
+  async updateTask(taskId: string, updates: UpdateTaskInput): Promise<StandaloneTask> {
+    const task = await this.taskStore.getById(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (task.status === "running") throw new Error("Cannot update a running task");
+
+    const patch: Partial<StandaloneTask> = {};
+
+    if (updates.params) {
+      patch.params = { ...task.params, ...updates.params } as StandaloneTask["params"];
+    }
+
+    if (updates.model) {
+      patch.model = updates.model;
+    }
+
+    if (updates.budget !== undefined) {
+      const budgetKey = `task:${taskId}`;
+      const currentBudget = await this.budgetManager.getBudget(budgetKey);
+      const spent = currentBudget?.spent ?? 0;
+      await this.budgetManager.allocate(budgetKey, updates.budget - spent);
+      patch.budget = updates.budget;
+    }
+
+    // Handle schedule changes
+    if (updates.schedule !== undefined) {
+      this.unscheduleAllCallbacks(taskId);
+
+      if (updates.schedule === null) {
+        // Remove schedule
+        patch.schedule = undefined;
+        if (task.status === "scheduled" || task.status === "paused") {
+          patch.status = "completed";
+        }
+      } else {
+        // Replace schedule
+        patch.schedule = updates.schedule;
+        if (task.status !== "paused") {
+          patch.status = "scheduled";
+          if (updates.schedule.type === "scheduled") {
+            this.scheduleTaskSlots(taskId, updates.schedule.slots);
+          } else if (updates.schedule.type === "interval") {
+            this.scheduleTaskInterval(taskId, updates.schedule.intervalHours, updates.schedule.maxCycles);
+          }
+        }
+      }
+    }
+
+    await this.taskStore.update(taskId, patch);
+    const updated = await this.taskStore.getById(taskId);
+    return updated!;
+  }
+
+  async pauseTask(taskId: string): Promise<StandaloneTask> {
+    const task = await this.taskStore.getById(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (task.status !== "scheduled") throw new Error("Can only pause a scheduled task");
+
+    this.unscheduleAllCallbacks(taskId);
+    await this.taskStore.update(taskId, { status: "paused" });
+    logger.info(`Task paused: ${taskId}`);
+
+    const updated = await this.taskStore.getById(taskId);
+    return updated!;
+  }
+
+  async resumeTask(taskId: string): Promise<StandaloneTask> {
+    const task = await this.taskStore.getById(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (task.status !== "paused") throw new Error("Can only resume a paused task");
+    if (!task.schedule) throw new Error("Task has no schedule to resume");
+
+    if (task.schedule.type === "scheduled") {
+      this.scheduleTaskSlots(taskId, task.schedule.slots);
+    } else if (task.schedule.type === "interval") {
+      this.scheduleTaskInterval(taskId, task.schedule.intervalHours, task.schedule.maxCycles);
+    }
+
+    await this.taskStore.update(taskId, { status: "scheduled" });
+    logger.info(`Task resumed: ${taskId}`);
+
+    const updated = await this.taskStore.getById(taskId);
+    return updated!;
   }
 
   async reloadScheduledTasks(): Promise<void> {
     const tasks = await this.taskStore.getAll();
     let reloaded = 0;
     for (const task of tasks) {
-      if (!task.schedule || task.status === "completed" || task.status === "errored") continue;
+      if (!task.schedule || task.status === "completed" || task.status === "errored" || task.status === "paused") continue;
       if (task.schedule.type === "scheduled") {
         this.scheduleTaskSlots(task.taskId, task.schedule.slots);
         reloaded++;

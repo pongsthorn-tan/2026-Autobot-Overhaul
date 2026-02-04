@@ -32,6 +32,13 @@ export function apiPut<T>(path: string, body?: unknown): Promise<T> {
   });
 }
 
+export function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+  return apiFetch<T>(path, {
+    method: 'PATCH',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
 export function apiDelete<T>(path: string): Promise<T> {
   return apiFetch<T>(path, { method: 'DELETE' });
 }
@@ -130,7 +137,7 @@ export interface NextRunsResponse {
 
 // Standalone Tasks
 
-export type StandaloneTaskStatus = 'pending' | 'scheduled' | 'running' | 'completed' | 'errored';
+export type StandaloneTaskStatus = 'pending' | 'scheduled' | 'running' | 'completed' | 'errored' | 'paused';
 export type TaskServiceType = 'report' | 'research' | 'code-task' | 'topic-tracker' | 'self-improve';
 
 export interface StandaloneTask {
@@ -170,6 +177,25 @@ export function listTasks(serviceType?: string): Promise<StandaloneTask[]> {
 
 export function deleteTask(taskId: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`/api/tasks/${taskId}`);
+}
+
+export interface UpdateTaskInput {
+  params?: Record<string, unknown>;
+  model?: ClaudeModel;
+  budget?: number;
+  schedule?: Record<string, unknown> | null;
+}
+
+export function updateTask(taskId: string, updates: UpdateTaskInput): Promise<StandaloneTask> {
+  return apiPatch<StandaloneTask>(`/api/tasks/${taskId}`, updates);
+}
+
+export function pauseTask(taskId: string): Promise<StandaloneTask> {
+  return apiPost<StandaloneTask>(`/api/tasks/${taskId}/pause`);
+}
+
+export function resumeTask(taskId: string): Promise<StandaloneTask> {
+  return apiPost<StandaloneTask>(`/api/tasks/${taskId}/resume`);
 }
 
 // Schedule types
