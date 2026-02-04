@@ -51,7 +51,7 @@ function TasksPageInner() {
     return () => clearInterval(interval);
   }, [fetchTasks]);
 
-  const handleSubmit = async (input: CreateTaskInput) => {
+  const handleSubmit = async (input: CreateTaskInput): Promise<{ taskId: string } | void> => {
     setLoading(true);
     setError(null);
     setActiveTaskId(null);
@@ -59,6 +59,7 @@ function TasksPageInner() {
       const task = await createTask(input);
       setActiveTaskId(task.taskId);
       await fetchTasks();
+      return { taskId: task.taskId };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create task');
     } finally {

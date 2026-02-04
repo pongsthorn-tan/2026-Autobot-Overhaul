@@ -382,9 +382,9 @@ async function handleRoute(
     };
 
     if (runNow) {
-      const task = await ctx.taskExecutor.createAndRun(taskInput);
-      // Register SSE progress callback for this task
-      ctx.taskExecutor.setProgressCallback(task.taskId, createTaskProgressCallback(task.taskId));
+      const task = await ctx.taskExecutor.createAndRun(taskInput, (taskId) => {
+        ctx.taskExecutor.setProgressCallback(taskId, createTaskProgressCallback(taskId));
+      });
       return task;
     } else if (input.schedule && (input.schedule.type === "scheduled" || input.schedule.type === "interval")) {
       const task = await ctx.taskExecutor.createAndSchedule(taskInput, input.schedule as ScheduleConfig);

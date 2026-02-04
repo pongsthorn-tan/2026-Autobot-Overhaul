@@ -23,6 +23,46 @@ interface StructuredReport {
   conclusion?: string;
 }
 
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mmm = months[d.getMonth()];
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mmm}/${yyyy} ${hh}:${mm}`;
+}
+
+function extractLinks(report: StructuredReport): { text: string; url: string }[] {
+  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
+  const seen = new Set<string>();
+  const links: { text: string; url: string }[] = [];
+
+  const scan = (str?: string) => {
+    if (!str) return;
+    let match;
+    while ((match = linkRegex.exec(str)) !== null) {
+      if (!seen.has(match[2])) {
+        seen.add(match[2]);
+        links.push({ text: match[1], url: match[2] });
+      }
+    }
+  };
+
+  for (const s of report.sections) {
+    scan(s.content);
+    s.items?.forEach(item => {
+      if (typeof item === 'string') scan(item);
+      else { scan(item.title); scan(item.detail); }
+    });
+    s.pros?.forEach(scan);
+    s.cons?.forEach(scan);
+  }
+  scan(report.conclusion);
+  return links;
+}
+
 // Lightweight markdown to HTML (bold, italic, links, code, lists)
 function renderMarkdown(text: string): ReactNode[] {
   const lines = text.split('\n');
@@ -513,7 +553,7 @@ export default function ReportRenderer({ output }: ReportRendererProps) {
               borderRadius: '50%',
               background: 'var(--accent-green)',
             }} />
-            {new Date(report.generatedAt).toLocaleString()}
+            {formatDate(report.generatedAt)}
           </div>
           <div style={{
             display: 'inline-flex',
@@ -560,6 +600,75 @@ export default function ReportRenderer({ output }: ReportRendererProps) {
           </div>
         </div>
       )}
+
+      {/* Sources */}
+      {(() => {
+        const links = extractLinks(report);
+        if (links.length === 0) return null;
+        return (
+          <div style={{
+            marginTop: '36px',
+            padding: '20px 24px',
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              marginBottom: '14px',
+            }}>
+              <div style={{
+                width: '4px',
+                height: '20px',
+                borderRadius: '2px',
+                background: 'linear-gradient(180deg, #3b82f6 0%, #06b6d4 100%)',
+              }} />
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)' }}>Sources</h3>
+              <span style={{
+                fontSize: '0.7rem',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                background: 'var(--bg-secondary)',
+                color: 'var(--text-muted)',
+              }}>{links.length}</span>
+            </div>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+              {links.map((link, i) => (
+                <li key={i} style={{
+                  padding: '8px 0',
+                  borderTop: i > 0 ? '1px solid var(--border-color)' : undefined,
+                }}>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: 'var(--accent-blue, #3b82f6)',
+                      textDecoration: 'none',
+                      fontSize: '0.85rem',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {link.text}
+                  </a>
+                  <div style={{
+                    fontSize: '0.72rem',
+                    color: 'var(--text-muted)',
+                    marginTop: '2px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {link.url}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Footer */}
       <div style={{

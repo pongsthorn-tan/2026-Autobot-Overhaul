@@ -1,180 +1,94 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import CommonFields from './common-fields';
+import LiveLog from '../../components/live-log';
+import ReportRenderer from '../../components/report-renderer';
 import {
   type ClaudeModel,
   type CreateTaskInput,
   type ScheduleSlot,
   type ScheduleConfig,
-  type RefineProvider,
-  type OpenAIModel,
+  type TaskStreamEvent,
+  type RefineStreamEvent,
   startRefinePrompt,
-  pollRefinePrompt,
+  streamRefinePrompt,
 } from '../../lib/api';
 
 interface TaskFormReportProps {
-  onSubmit: (input: CreateTaskInput) => Promise<void>;
+  onSubmit: (input: CreateTaskInput) => Promise<{ taskId: string } | void>;
   loading: boolean;
 }
 
-type Step = 'input' | 'refining' | 'review' | 'configure';
+type Step = 'input' | 'refining' | 'review' | 'configure' | 'running' | 'done';
 
 interface PromptVersion {
   prompt: string;
   cost: number;
-  tokensUsed?: { input: number; output: number };
 }
 
-// ---------- Simon Says Mini-Game ----------
+// ---------- Step Indicator ----------
 
-const SIMON_COLORS = [
-  { name: 'green', idle: '#1a4a2e', active: '#22c55e', light: '#4ade80' },
-  { name: 'red', idle: '#4a1a1a', active: '#ef4444', light: '#f87171' },
-  { name: 'yellow', idle: '#4a4a1a', active: '#eab308', light: '#facc15' },
-  { name: 'blue', idle: '#1a2a4a', active: '#3b82f6', light: '#60a5fa' },
+const STEP_LABELS: { key: Step; label: string }[] = [
+  { key: 'input', label: 'Describe' },
+  { key: 'review', label: 'Review' },
+  { key: 'configure', label: 'Configure' },
 ];
 
-type SimonPhase = 'watching' | 'playing' | 'gameover';
-
-function SimonSaysGame() {
-  const [sequence, setSequence] = useState<number[]>([]);
-  const [playerIndex, setPlayerIndex] = useState(0);
-  const [phase, setPhase] = useState<SimonPhase>('watching');
-  const [activeColor, setActiveColor] = useState<number | null>(null);
-  const [score, setScore] = useState(0);
-  const [highScore, setHighScore] = useState(0);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearTimer = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-  }, []);
-
-  const playSequence = useCallback((seq: number[]) => {
-    setPhase('watching');
-    let i = 0;
-    const playNext = () => {
-      if (i < seq.length) {
-        setActiveColor(seq[i]);
-        timeoutRef.current = setTimeout(() => {
-          setActiveColor(null);
-          i++;
-          timeoutRef.current = setTimeout(playNext, 250);
-        }, 500);
-      } else {
-        setPhase('playing');
-        setPlayerIndex(0);
-      }
-    };
-    timeoutRef.current = setTimeout(playNext, 400);
-  }, []);
-
-  const startNewGame = useCallback(() => {
-    clearTimer();
-    const first = Math.floor(Math.random() * 4);
-    const newSeq = [first];
-    setSequence(newSeq);
-    setScore(0);
-    setPlayerIndex(0);
-    playSequence(newSeq);
-  }, [clearTimer, playSequence]);
-
-  useEffect(() => {
-    startNewGame();
-    return clearTimer;
-  }, [startNewGame, clearTimer]);
-
-  const handlePress = (colorIndex: number) => {
-    if (phase !== 'playing') return;
-
-    setActiveColor(colorIndex);
-    setTimeout(() => setActiveColor(null), 200);
-
-    if (colorIndex !== sequence[playerIndex]) {
-      setPhase('gameover');
-      setHighScore((prev) => Math.max(prev, score));
-      return;
-    }
-
-    const nextIndex = playerIndex + 1;
-    if (nextIndex >= sequence.length) {
-      const newScore = score + 1;
-      setScore(newScore);
-      const next = Math.floor(Math.random() * 4);
-      const newSeq = [...sequence, next];
-      setSequence(newSeq);
-      setPhase('watching');
-      timeoutRef.current = setTimeout(() => playSequence(newSeq), 600);
-    } else {
-      setPlayerIndex(nextIndex);
-    }
-  };
-
-  const SIZE = 120;
-  const GAP = 4;
-  const HALF = (SIZE - GAP) / 2;
+function StepIndicator({ current }: { current: Step }) {
+  const activeIndex = current === 'refining'
+    ? 0
+    : current === 'running' || current === 'done'
+      ? 3
+      : STEP_LABELS.findIndex((s) => s.key === current);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `${HALF}px ${HALF}px`,
-          gap: `${GAP}px`,
-          width: SIZE,
-          height: SIZE,
-        }}
-      >
-        {SIMON_COLORS.map((c, i) => (
-          <button
-            key={c.name}
-            type="button"
-            onClick={() => handlePress(i)}
-            disabled={phase !== 'playing'}
-            style={{
-              width: HALF,
-              height: HALF,
-              borderRadius: '8px',
-              border: 'none',
-              cursor: phase === 'playing' ? 'pointer' : 'default',
-              background: activeColor === i ? c.active : c.idle,
-              boxShadow: activeColor === i ? `0 0 12px ${c.light}` : 'none',
-              transition: 'background 0.1s, box-shadow 0.1s',
-            }}
-          />
-        ))}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', width: SIZE, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-        <span>Score: {score}</span>
-        <span>Best: {highScore}</span>
-      </div>
-      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
-        {phase === 'watching' && 'Watch the pattern...'}
-        {phase === 'playing' && 'Your turn! Repeat the pattern'}
-        {phase === 'gameover' && (
-          <span>
-            Wrong!{' '}
-            <button
-              type="button"
-              onClick={startNewGame}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--accent-blue)',
-                cursor: 'pointer',
-                textDecoration: 'underline',
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0',
+      marginBottom: '24px',
+      padding: '0 4px',
+    }}>
+      {STEP_LABELS.map((s, i) => {
+        const isActive = i === activeIndex;
+        const isDone = i < activeIndex;
+        const color = isActive ? 'var(--accent-blue)' : isDone ? 'var(--accent-green)' : 'var(--text-muted)';
+
+        return (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', flex: i < STEP_LABELS.length - 1 ? 1 : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 fontSize: '0.7rem',
-                padding: 0,
-              }}
-            >
-              Play again
-            </button>
-          </span>
-        )}
-      </div>
+                fontWeight: 700,
+                background: isActive ? 'var(--accent-blue)' : isDone ? 'var(--accent-green)' : 'var(--bg-tertiary)',
+                color: isActive || isDone ? '#fff' : 'var(--text-muted)',
+                transition: 'all 0.2s',
+              }}>
+                {isDone ? '\u2713' : i + 1}
+              </div>
+              <span style={{ fontSize: '0.8rem', fontWeight: isActive ? 600 : 400, color, transition: 'color 0.2s' }}>
+                {s.label}
+              </span>
+            </div>
+            {i < STEP_LABELS.length - 1 && (
+              <div style={{
+                flex: 1,
+                height: '1px',
+                margin: '0 12px',
+                background: isDone ? 'var(--accent-green)' : 'var(--border-color)',
+                transition: 'background 0.2s',
+              }} />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -182,15 +96,11 @@ function SimonSaysGame() {
 // ---------- Report Form ----------
 
 export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProps) {
-  // Step state
   const [step, setStep] = useState<Step>('input');
 
   // Input step
   const [rawPrompt, setRawPrompt] = useState('');
-  const [refineProvider, setRefineProvider] = useState<RefineProvider>('openai');
   const [refineModel, setRefineModel] = useState<ClaudeModel>('sonnet');
-  const [openaiModel, setOpenaiModel] = useState<OpenAIModel>('gpt-5-mini');
-  const [maxTokens, setMaxTokens] = useState(2048);
 
   // Review step
   const [promptHistory, setPromptHistory] = useState<PromptVersion[]>([]);
@@ -198,10 +108,13 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
   const [totalRefinementCost, setTotalRefinementCost] = useState(0);
   const [refineError, setRefineError] = useState<string | null>(null);
 
-  // Refining step
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Refining step — SSE
+  const [refineJobId, setRefineJobId] = useState<string | null>(null);
+  const [refineChunks, setRefineChunks] = useState('');
+
+  // Running step
+  const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
+  const [taskOutput, setTaskOutput] = useState<string | null>(null);
 
   // Configure step
   const [model, setModel] = useState<ClaudeModel>('sonnet');
@@ -214,86 +127,44 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
     return { type: 'scheduled', slots };
   };
 
-  // Cleanup intervals on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
   const handleRefine = async (prompt: string) => {
     setRefineError(null);
-
-    const provider = refineProvider;
-    const selectedModel = provider === 'openai' ? openaiModel : refineModel;
+    setRefineChunks('');
 
     try {
-      const result = await startRefinePrompt(prompt, provider, selectedModel, maxTokens);
+      const result = await startRefinePrompt(prompt, refineModel);
+      if (!result.jobId) throw new Error('No jobId returned');
 
-      // OpenAI: instant response — skip straight to review
-      if (result.provider === 'openai' && result.refinedPrompt) {
-        const version: PromptVersion = {
-          prompt: result.refinedPrompt,
-          cost: result.cost ?? 0,
-          tokensUsed: result.tokensUsed,
-        };
-        setPromptHistory((prev) => [...prev, version]);
-        setCurrentPrompt(result.refinedPrompt);
-        setTotalRefinementCost((prev) => prev + (result.cost ?? 0));
-        setStep('review');
-        return;
-      }
-
-      // Claude: async job — start polling + Snake game
-      if (!result.jobId) throw new Error('No jobId returned from Claude provider');
-
+      setRefineJobId(result.jobId);
       setStep('refining');
-      setElapsedSeconds(0);
-
-      timerRef.current = setInterval(() => {
-        setElapsedSeconds((s) => s + 1);
-      }, 1000);
-
-      const jobId = result.jobId;
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const pollResult = await pollRefinePrompt(jobId);
-
-          if (pollResult.status === 'completed') {
-            if (pollRef.current) clearInterval(pollRef.current);
-            if (timerRef.current) clearInterval(timerRef.current);
-            pollRef.current = null;
-            timerRef.current = null;
-
-            const version: PromptVersion = {
-              prompt: pollResult.refinedPrompt || '',
-              cost: pollResult.cost || 0,
-            };
-            setPromptHistory((prev) => [...prev, version]);
-            setCurrentPrompt(pollResult.refinedPrompt || '');
-            setTotalRefinementCost((prev) => prev + (pollResult.cost || 0));
-            setStep('review');
-          } else if (pollResult.status === 'errored') {
-            if (pollRef.current) clearInterval(pollRef.current);
-            if (timerRef.current) clearInterval(timerRef.current);
-            pollRef.current = null;
-            timerRef.current = null;
-
-            setRefineError(pollResult.error || 'Refinement failed');
-            setStep(promptHistory.length > 0 ? 'review' : 'input');
-          }
-        } catch {
-          // Poll network error — keep trying
-        }
-      }, 2000);
     } catch (err) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = null;
       setRefineError(err instanceof Error ? err.message : 'Failed to start refinement');
+    }
+  };
+
+  const handleRefineStreamEvent = (event: RefineStreamEvent) => {
+    if (event.type === 'chunk') {
+      setRefineChunks((prev) => prev + (event.text ?? ''));
+    } else if (event.type === 'done') {
+      const version: PromptVersion = {
+        prompt: event.refinedPrompt || refineChunks,
+        cost: event.cost || 0,
+      };
+      setPromptHistory((prev) => [...prev, version]);
+      setCurrentPrompt(event.refinedPrompt || refineChunks);
+      setTotalRefinementCost((prev) => prev + (event.cost || 0));
+      setRefineJobId(null);
+      setStep('review');
+    } else if (event.type === 'error') {
+      setRefineError(event.error || 'Refinement failed');
+      setRefineJobId(null);
       setStep(promptHistory.length > 0 ? 'review' : 'input');
     }
+  };
+
+  const handleUseAsIs = () => {
+    setCurrentPrompt(rawPrompt.trim());
+    setStep('configure');
   };
 
   const handleRevert = (index: number) => {
@@ -304,254 +175,146 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
     setStep('configure');
   };
 
-  const handleSubmit = (runNow: boolean) => {
+  const handleSubmit = async (runNow: boolean) => {
     if (!currentPrompt.trim()) return;
-    onSubmit({
+
+    const input: CreateTaskInput = {
       serviceType: 'report',
       params: { serviceType: 'report', prompt: currentPrompt.trim() },
       model,
       budget: parseFloat(budget) || 1.0,
       runNow,
       schedule: buildSchedule(),
-    });
+    };
+
+    try {
+      const result = await onSubmit(input);
+      if (runNow && result?.taskId) {
+        setRunningTaskId(result.taskId);
+        setStep('running');
+      }
+    } catch {
+      // onSubmit handles errors
+    }
+  };
+
+  const handleTaskDone = (event: TaskStreamEvent | RefineStreamEvent) => {
+    if ('output' in event && event.output) {
+      setTaskOutput(event.output);
+    }
+    setStep('done');
   };
 
   // Step: input
   if (step === 'input') {
     return (
       <div>
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+        <StepIndicator current="input" />
+
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '6px' }}>
             What do you want from this report?
           </label>
           <textarea
-            placeholder="Describe your report idea in rough terms..."
+            placeholder="Describe your report idea in rough terms... e.g. 'summarize the latest AI research papers on autonomous agents'"
             value={rawPrompt}
             onChange={(e) => setRawPrompt(e.target.value)}
-            rows={4}
-            style={{ width: '100%', resize: 'vertical' }}
+            rows={5}
+            style={{
+              width: '100%',
+              resize: 'vertical',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px',
+              color: 'var(--text-primary)',
+              fontSize: '0.875rem',
+              lineHeight: '1.6',
+            }}
           />
         </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '16px', flexWrap: 'wrap' }}>
-          {/* Provider toggle */}
-          <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-              Provider
-            </label>
-            <div style={{ display: 'inline-flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-              <button
-                type="button"
-                onClick={() => setRefineProvider('openai')}
-                style={{
-                  padding: '6px 14px',
-                  fontSize: '0.8rem',
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: refineProvider === 'openai' ? 'var(--accent-blue)' : 'var(--bg-secondary)',
-                  color: refineProvider === 'openai' ? '#fff' : 'var(--text-secondary)',
-                  fontWeight: refineProvider === 'openai' ? 600 : 400,
-                }}
+
+        <div style={{
+          padding: '16px',
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: 'var(--radius-lg)',
+          marginBottom: '16px',
+        }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+            AI can refine your rough idea into a detailed, structured prompt — or you can use it as-is.
+          </div>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                Refine Model
+              </label>
+              <select
+                value={refineModel}
+                onChange={(e) => setRefineModel(e.target.value as ClaudeModel)}
+                style={{ width: '200px' }}
               >
-                Faster (OpenAI)
-              </button>
-              <button
-                type="button"
-                onClick={() => setRefineProvider('claude')}
-                style={{
-                  padding: '6px 14px',
-                  fontSize: '0.8rem',
-                  border: 'none',
-                  borderLeft: '1px solid var(--border-color)',
-                  cursor: 'pointer',
-                  background: refineProvider === 'claude' ? 'var(--accent-blue)' : 'var(--bg-secondary)',
-                  color: refineProvider === 'claude' ? '#fff' : 'var(--text-secondary)',
-                  fontWeight: refineProvider === 'claude' ? 600 : 400,
-                }}
-              >
-                Wait (Claude)
-              </button>
+                <option value="haiku">Haiku (Fast)</option>
+                <option value="sonnet">Sonnet (Balanced)</option>
+                <option value="opus">Opus (Best)</option>
+              </select>
             </div>
           </div>
-
-          {/* Model picker — changes based on provider */}
-          <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-              Model
-            </label>
-            {refineProvider === 'openai' ? (
-              <select value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value as OpenAIModel)} style={{ width: '220px' }}>
-                <option value="gpt-5-nano">GPT-5 Nano ($0.05/$0.40)</option>
-                <option value="gpt-5-mini">GPT-5 Mini ($0.25/$2.00)</option>
-                <option value="gpt-5.2">GPT-5.2 ($1.75/$14.00)</option>
-              </select>
-            ) : (
-              <select value={refineModel} onChange={(e) => setRefineModel(e.target.value as ClaudeModel)} style={{ width: '220px' }}>
-                <option value="haiku">Haiku (Fast, Low Cost)</option>
-                <option value="sonnet">Sonnet (Balanced)</option>
-                <option value="opus">Opus (Most Capable)</option>
-              </select>
-            )}
-          </div>
-
-          {/* Max tokens */}
-          <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-              Max Tokens
-            </label>
-            <select
-              value={maxTokens}
-              onChange={(e) => setMaxTokens(Number(e.target.value))}
-              style={{ width: '140px' }}
-            >
-              <option value={512}>512</option>
-              <option value={1024}>1,024</option>
-              <option value={2048}>2,048</option>
-              <option value={4096}>4,096</option>
-              <option value={8192}>8,192</option>
-              <option value={16384}>16,384</option>
-            </select>
-          </div>
         </div>
+
         {refineError && (
           <div className="error-message" style={{ marginBottom: '12px' }}>{refineError}</div>
         )}
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => handleRefine(rawPrompt)}
-          disabled={!rawPrompt.trim()}
-        >
-          Refine Prompt
-        </button>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => handleRefine(rawPrompt)}
+            disabled={!rawPrompt.trim()}
+          >
+            Refine with AI
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleUseAsIs}
+            disabled={!rawPrompt.trim()}
+          >
+            Use As-Is
+          </button>
+        </div>
       </div>
     );
   }
 
-  // Step: refining — async polling with mini-game + process detail
-  if (step === 'refining') {
-    const mins = Math.floor(elapsedSeconds / 60);
-    const secs = elapsedSeconds % 60;
-    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-
-    // Phase detail based on elapsed time
-    const isWarning = elapsedSeconds >= 120;
-    const phaseLabel =
-      elapsedSeconds < 5 ? 'Spawning Claude CLI...' :
-      elapsedSeconds < 15 ? 'Claude is reading your prompt...' :
-      elapsedSeconds < 60 ? 'Claude is refining...' :
-      elapsedSeconds < 120 ? 'Still working, almost there...' :
-      'Taking longer than expected — something may be wrong';
-
-    // Progress steps
-    const steps = [
-      { label: 'Start job', done: elapsedSeconds >= 1 },
-      { label: 'Spawn Claude', done: elapsedSeconds >= 5 },
-      { label: 'Refine prompt', done: false },
-      { label: 'Calculate cost', done: false },
-    ];
-
+  // Step: refining — SSE streaming
+  if (step === 'refining' && refineJobId) {
     return (
-      <div style={{ padding: '16px 0' }}>
-        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-          {/* Left: status detail */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '4px' }}>
-              Refining your prompt...
-            </div>
-            <div style={{ fontSize: '0.85rem', color: isWarning ? 'var(--accent-yellow)' : 'var(--text-secondary)', marginBottom: '12px' }}>
-              {phaseLabel}
-            </div>
+      <div>
+        <StepIndicator current="refining" />
 
-            {/* Process steps */}
-            <div style={{ marginBottom: '16px' }}>
-              {steps.map((s, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.8rem' }}>
-                  <span style={{ width: '16px', textAlign: 'center', color: s.done ? 'var(--accent-green, #22c55e)' : 'var(--text-secondary)' }}>
-                    {s.done ? '\u2713' : '\u00B7'}
-                  </span>
-                  <span style={{ color: s.done ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                    {s.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Timer */}
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-              Elapsed: {timeStr}
-            </div>
-
-            {/* Progress bar */}
-            <div
-              style={{
-                width: '100%',
-                maxWidth: '240px',
-                height: '3px',
-                background: 'var(--bg-tertiary)',
-                borderRadius: '2px',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  height: '100%',
-                  background: isWarning ? 'var(--accent-yellow, #eab308)' : 'var(--accent-blue)',
-                  borderRadius: '2px',
-                  animation: 'pulse-bar 2s ease-in-out infinite',
-                }}
-              />
-            </div>
-
-            {/* Warning message */}
-            {isWarning && (
-              <div style={{
-                marginTop: '12px',
-                padding: '8px 12px',
-                background: 'rgba(234, 179, 8, 0.1)',
-                border: '1px solid rgba(234, 179, 8, 0.3)',
-                borderRadius: '6px',
-                fontSize: '0.78rem',
-                color: 'var(--accent-yellow, #eab308)',
-              }}>
-                This is taking unusually long. The Claude CLI process or cost
-                calculation may be stuck. You can wait or go back and try the
-                Faster (OpenAI) provider instead.
-                <div style={{ marginTop: '6px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      if (pollRef.current) clearInterval(pollRef.current);
-                      if (timerRef.current) clearInterval(timerRef.current);
-                      pollRef.current = null;
-                      timerRef.current = null;
-                      setRefineError('Cancelled — refinement was taking too long');
-                      setStep(promptHistory.length > 0 ? 'review' : 'input');
-                    }}
-                    style={{ fontSize: '0.75rem' }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '12px' }}>
+            Refining your prompt...
           </div>
-
-          {/* Right: mini-game */}
-          <div style={{ flexShrink: 0 }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '6px' }}>
-              Play while you wait
-            </div>
-            <SimonSaysGame />
-          </div>
+          <LiveLog
+            refineJobId={refineJobId}
+            onDone={handleRefineStreamEvent as (e: TaskStreamEvent | RefineStreamEvent) => void}
+          />
         </div>
 
-        <style>{`
-          @keyframes pulse-bar {
-            0%, 100% { width: 20%; margin-left: 0; }
-            50% { width: 60%; margin-left: 20%; }
-          }
-        `}</style>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            setRefineJobId(null);
+            setStep(promptHistory.length > 0 ? 'review' : 'input');
+          }}
+          style={{ marginTop: '12px' }}
+        >
+          Cancel
+        </button>
       </div>
     );
   }
@@ -560,68 +323,177 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
   if (step === 'review') {
     return (
       <div>
-        <div style={{ display: 'flex', gap: '16px' }}>
-          {/* Main area */}
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-              Refined Prompt (editable)
-            </label>
-            <textarea
-              value={currentPrompt}
-              onChange={(e) => setCurrentPrompt(e.target.value)}
-              rows={8}
-              style={{ width: '100%', resize: 'vertical' }}
-            />
-          </div>
+        <StepIndicator current="review" />
 
-          {/* Version history sidebar */}
-          {promptHistory.length > 1 && (
-            <div style={{ width: '200px', flexShrink: 0 }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                Version History
+        <div style={{
+          padding: '20px',
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: 'var(--radius-lg)',
+          marginBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', gap: '20px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.8rem',
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                marginBottom: '6px',
+              }}>
+                Refined Prompt (editable)
               </label>
-              {promptHistory.map((version, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleRevert(idx)}
-                  className="btn btn-secondary btn-sm"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    marginBottom: '4px',
-                    textAlign: 'left',
-                    fontSize: '0.75rem',
-                  }}
-                >
-                  <div>v{idx + 1} — ${version.cost.toFixed(4)}</div>
-                  {version.tokensUsed && (
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '1px' }}>
-                      {version.tokensUsed.input}in / {version.tokensUsed.output}out
-                    </div>
-                  )}
-                </button>
-              ))}
+              <textarea
+                value={currentPrompt}
+                onChange={(e) => setCurrentPrompt(e.target.value)}
+                rows={10}
+                style={{
+                  width: '100%',
+                  resize: 'vertical',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '12px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.875rem',
+                  lineHeight: '1.6',
+                }}
+              />
             </div>
-          )}
+
+            {promptHistory.length > 1 && (
+              <div style={{ width: '180px', flexShrink: 0 }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: '10px',
+                }}>
+                  Versions
+                </label>
+                {promptHistory.map((version, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleRevert(idx)}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      marginBottom: '6px',
+                      padding: '8px 10px',
+                      textAlign: 'left',
+                      fontSize: '0.78rem',
+                      background: currentPrompt === version.prompt ? 'var(--bg-hover)' : 'var(--bg-tertiary)',
+                      border: currentPrompt === version.prompt ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.15s',
+                    }}
+                  >
+                    <div style={{ fontWeight: 500 }}>v{idx + 1}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      ${version.cost.toFixed(4)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          Total refinement cost: ${totalRefinementCost.toFixed(4)}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            {totalRefinementCost > 0 && `Refinement cost: $${totalRefinementCost.toFixed(4)}`}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setStep('input')}>
+              Back
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => handleRefine(currentPrompt)}>
+              Refine Again
+            </button>
+            <button type="button" className="btn btn-primary" onClick={handleUsePrompt}>
+              Use This Prompt
+            </button>
+          </div>
         </div>
 
         {refineError && (
-          <div className="error-message" style={{ marginTop: '8px' }}>{refineError}</div>
+          <div className="error-message" style={{ marginTop: '12px' }}>{refineError}</div>
         )}
+      </div>
+    );
+  }
 
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-          <button type="button" className="btn btn-secondary" onClick={() => handleRefine(currentPrompt)}>
-            Refine Again
-          </button>
-          <button type="button" className="btn btn-primary" onClick={handleUsePrompt}>
-            Use This Prompt
-          </button>
+  // Step: running — live log
+  if (step === 'running' && runningTaskId) {
+    return (
+      <div>
+        <div style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '12px' }}>
+          Generating report...
         </div>
+        <LiveLog taskId={runningTaskId} onDone={handleTaskDone} />
+      </div>
+    );
+  }
+
+  // Step: done — show rendered report
+  if (step === 'done') {
+    return (
+      <div>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px',
+        }}>
+          <div style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--accent-green)' }}>
+            Report complete
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {runningTaskId && (
+              <a
+                href={`/tasks/${runningTaskId}`}
+                className="btn btn-primary"
+                style={{ textDecoration: 'none' }}
+              >
+                View Full Report
+              </a>
+            )}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setStep('input');
+                setRunningTaskId(null);
+                setTaskOutput(null);
+                setRawPrompt('');
+                setCurrentPrompt('');
+                setPromptHistory([]);
+              }}
+            >
+              New Report
+            </button>
+          </div>
+        </div>
+        {taskOutput && (
+          <div style={{
+            padding: '24px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+          }}>
+            <ReportRenderer output={taskOutput} />
+          </div>
+        )}
       </div>
     );
   }
@@ -629,32 +501,50 @@ export default function TaskFormReport({ onSubmit, loading }: TaskFormReportProp
   // Step: configure
   return (
     <div>
-      <div style={{ marginBottom: '16px' }}>
-        <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-          Final Prompt
-        </label>
+      <StepIndicator current="configure" />
+
+      <div style={{
+        marginBottom: '20px',
+        padding: '16px',
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border-color)',
+        borderRadius: 'var(--radius-lg)',
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '10px',
+        }}>
+          <label style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+            Final Prompt
+          </label>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setStep(promptHistory.length > 0 ? 'review' : 'input')}
+            style={{ fontSize: '0.75rem' }}
+          >
+            Edit
+          </button>
+        </div>
         <div
           style={{
             padding: '12px',
-            background: 'var(--bg-secondary)',
-            borderRadius: '6px',
+            background: 'var(--bg-tertiary)',
+            borderRadius: 'var(--radius-md)',
             fontSize: '0.85rem',
             whiteSpace: 'pre-wrap',
             maxHeight: '200px',
             overflow: 'auto',
+            lineHeight: '1.6',
+            color: 'var(--text-primary)',
           }}
         >
           {currentPrompt}
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={() => setStep('review')}
-          style={{ marginTop: '8px', fontSize: '0.75rem' }}
-        >
-          &larr; Edit Prompt
-        </button>
       </div>
+
       <CommonFields
         model={model}
         setModel={setModel}

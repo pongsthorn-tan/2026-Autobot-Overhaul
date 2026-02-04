@@ -5,7 +5,7 @@ import CommonFields from './common-fields';
 import { type ClaudeModel, type CreateTaskInput, type ScheduleSlot, type ScheduleConfig } from '../../lib/api';
 
 interface TaskFormCodeTaskProps {
-  onSubmit: (input: CreateTaskInput) => Promise<void>;
+  onSubmit: (input: CreateTaskInput) => Promise<{ taskId: string } | void>;
   loading: boolean;
 }
 

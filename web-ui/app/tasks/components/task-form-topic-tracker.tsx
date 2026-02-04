@@ -12,7 +12,7 @@ import {
 } from '../../lib/api';
 
 interface TaskFormTopicTrackerProps {
-  onSubmit: (input: CreateTaskInput) => Promise<void>;
+  onSubmit: (input: CreateTaskInput) => Promise<{ taskId: string } | void>;
   loading: boolean;
   activeTaskId?: string | null;
 }

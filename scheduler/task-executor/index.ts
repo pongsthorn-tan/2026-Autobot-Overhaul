@@ -38,7 +38,7 @@ export class TaskExecutor {
     this.progressCallbacks.delete(taskId);
   }
 
-  async createAndRun(input: CreateTaskInput): Promise<StandaloneTask> {
+  async createAndRun(input: CreateTaskInput, onCreated?: (taskId: string) => void): Promise<StandaloneTask> {
     const taskId = uuidv4();
     const budgetKey = `task:${taskId}`;
 
@@ -61,6 +61,9 @@ export class TaskExecutor {
     // Allocate budget for this task
     await this.budgetManager.allocate(budgetKey, input.budget);
     await this.taskStore.create(task);
+
+    // Register progress callback before execution starts
+    if (onCreated) onCreated(taskId);
 
     // Fire-and-forget execution
     this.executeTask(taskId, budgetKey).catch((err) => {
@@ -260,6 +263,12 @@ export class TaskExecutor {
         costSpent,
         output: taskOutput || null,
       });
+
+      // Broadcast done event to SSE clients
+      const onProgressDone = this.progressCallbacks.get(taskId);
+      if (onProgressDone) {
+        onProgressDone({ type: "done", output: taskOutput || undefined, cost: costSpent });
+      }
 
       logger.info(`Task completed: ${taskId}`, {
         serviceType: task.serviceType,
