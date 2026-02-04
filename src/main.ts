@@ -198,7 +198,16 @@ async function main(): Promise<void> {
         "Connection": "keep-alive",
       });
       res.write(`data: ${JSON.stringify({ type: "connected", jobId })}\n\n`);
-      sseRegister(`refine:${jobId}`, res);
+
+      // Replay result if job already completed before client connected
+      const job = refineJobs.get(jobId);
+      if (job?.status === "completed") {
+        sseWrite(res, { type: "done", refinedPrompt: job.refinedPrompt, cost: job.cost });
+      } else if (job?.status === "errored") {
+        sseWrite(res, { type: "error", error: job.error });
+      } else {
+        sseRegister(`refine:${jobId}`, res);
+      }
       return;
     }
 
