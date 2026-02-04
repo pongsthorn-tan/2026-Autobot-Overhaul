@@ -7,8 +7,15 @@ import { formatDate } from '../../lib/format-date';
 interface TaskListProps {
   tasks: StandaloneTask[];
   serviceType: TaskServiceType;
+  isIntelTab?: boolean;
   onRefresh: () => void;
 }
+
+const INTEL_STYLE_BADGES: Record<string, { label: string; color: string }> = {
+  'report': { label: 'Report', color: 'var(--accent-blue, #3b82f6)' },
+  'research': { label: 'Research', color: 'var(--accent-purple, #8b5cf6)' },
+  'topic-tracker': { label: 'Tracker', color: 'var(--accent-orange, #f59e0b)' },
+};
 
 function getStatusBadgeClass(status: string): string {
   switch (status) {
@@ -58,7 +65,7 @@ function getCycleProgress(task: StandaloneTask): string | null {
   return null;
 }
 
-export default function TaskList({ tasks, serviceType, onRefresh }: TaskListProps) {
+export default function TaskList({ tasks, serviceType, isIntelTab, onRefresh }: TaskListProps) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
   const handleDelete = async (taskId: string) => {
@@ -102,6 +109,20 @@ export default function TaskList({ tasks, serviceType, onRefresh }: TaskListProp
               }}
             >
               <span className={getStatusBadgeClass(task.status)}>{task.status}</span>
+              {isIntelTab && INTEL_STYLE_BADGES[task.serviceType] && (
+                <span style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 600,
+                  padding: '1px 6px',
+                  borderRadius: '3px',
+                  color: INTEL_STYLE_BADGES[task.serviceType].color,
+                  background: 'var(--bg-tertiary)',
+                  border: `1px solid ${INTEL_STYLE_BADGES[task.serviceType].color}`,
+                  opacity: 0.85,
+                }}>
+                  {INTEL_STYLE_BADGES[task.serviceType].label}
+                </span>
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {getTaskSummary(task)}

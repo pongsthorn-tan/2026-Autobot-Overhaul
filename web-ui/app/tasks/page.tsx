@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   type TaskServiceType,
   type StandaloneTask,
@@ -9,47 +9,81 @@ import {
   createTask,
   listTasks,
 } from '../lib/api';
-import TaskFormReport from './components/task-form-report';
-import TaskFormResearch from './components/task-form-research';
+import TaskFormIntel from './components/task-form-intel';
 import TaskFormCodeTask from './components/task-form-code-task';
-import TaskFormTopicTracker from './components/task-form-topic-tracker';
 import TaskFormSelfImprove from './components/task-form-self-improve';
 import TaskList from './components/task-list';
 
-const TABS: { id: TaskServiceType; label: string }[] = [
-  { id: 'report', label: 'Report' },
-  { id: 'research', label: 'Research' },
-  { id: 'code-task', label: 'Code Task' },
-  { id: 'topic-tracker', label: 'Topic Tracker' },
-  { id: 'self-improve', label: 'Self-Improve' },
+type TabKey = 'intel' | 'code-task' | 'self-improve';
+
+const TABS: { key: TabKey; label: string; serviceTypes: TaskServiceType[] }[] = [
+  { key: 'intel', label: 'Intel', serviceTypes: ['report', 'research', 'topic-tracker'] },
+  { key: 'code-task', label: 'Code Task', serviceTypes: ['code-task'] },
+  { key: 'self-improve', label: 'Self-Improve', serviceTypes: ['self-improve'] },
 ];
+
+// Old service params that should redirect to intel
+const INTEL_SERVICE_TYPES = new Set(['report', 'research', 'topic-tracker']);
+
+function resolveTab(param: string | null): TabKey {
+  if (!param) return 'intel';
+  if (INTEL_SERVICE_TYPES.has(param)) return 'intel';
+  const found = TABS.find((t) => t.key === param);
+  return found ? found.key : 'intel';
+}
 
 function TasksPageInner() {
   const searchParams = useSearchParams();
-  const initialService = searchParams.get('service') as TaskServiceType | null;
+  const router = useRouter();
+  const serviceParam = searchParams.get('service');
 
-  const [activeTab, setActiveTab] = useState<TaskServiceType>(
-    initialService && TABS.some((t) => t.id === initialService) ? initialService : 'report'
-  );
+  const [activeTab, setActiveTab] = useState<TabKey>(() => resolveTab(serviceParam));
   const [tasks, setTasks] = useState<StandaloneTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
 
+  // Redirect old service params to intel
+  useEffect(() => {
+    if (serviceParam && INTEL_SERVICE_TYPES.has(serviceParam)) {
+      router.replace('/tasks?service=intel');
+    }
+  }, [serviceParam, router]);
+
+  const tabDef = TABS.find((t) => t.key === activeTab)!;
+
   const fetchTasks = useCallback(async () => {
     try {
-      const data = await listTasks(activeTab);
-      setTasks(data);
+      if (activeTab === 'intel') {
+        // Fetch all 3 intel service types and merge
+        const [reportTasks, researchTasks, trackerTasks] = await Promise.all([
+          listTasks('report'),
+          listTasks('research'),
+          listTasks('topic-tracker'),
+        ]);
+        const merged = [...reportTasks, ...researchTasks, ...trackerTasks]
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setTasks(merged);
+      } else {
+        const data = await listTasks(tabDef.serviceTypes[0]);
+        setTasks(data);
+      }
     } catch {
       setTasks([]);
     }
-  }, [activeTab]);
+  }, [activeTab, tabDef]);
 
   useEffect(() => {
     fetchTasks();
     const interval = setInterval(fetchTasks, 5000);
     return () => clearInterval(interval);
   }, [fetchTasks]);
+
+  const handleTabChange = (key: TabKey) => {
+    setActiveTab(key);
+    setActiveTaskId(null);
+    setError(null);
+  };
 
   const handleSubmit = async (input: CreateTaskInput): Promise<{ taskId: string } | void> => {
     setLoading(true);
@@ -83,16 +117,16 @@ function TasksPageInner() {
       >
         {TABS.map((tab) => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            key={tab.key}
+            onClick={() => handleTabChange(tab.key)}
             style={{
               padding: '8px 16px',
               fontSize: '0.85rem',
-              fontWeight: activeTab === tab.id ? 600 : 400,
-              color: activeTab === tab.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+              fontWeight: activeTab === tab.key ? 600 : 400,
+              color: activeTab === tab.key ? 'var(--text-primary)' : 'var(--text-secondary)',
               background: 'none',
               border: 'none',
-              borderBottom: activeTab === tab.id ? '2px solid var(--accent-blue, #3b82f6)' : '2px solid transparent',
+              borderBottom: activeTab === tab.key ? '2px solid var(--accent-blue, #3b82f6)' : '2px solid transparent',
               cursor: 'pointer',
               marginBottom: '-1px',
             }}
@@ -107,13 +141,11 @@ function TasksPageInner() {
       {/* Form */}
       <div className="section">
         <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px' }}>
-          New {TABS.find((t) => t.id === activeTab)?.label} Task
+          New {tabDef.label} Task
         </h2>
         <div className="card">
-          {activeTab === 'report' && <TaskFormReport onSubmit={handleSubmit} loading={loading} />}
-          {activeTab === 'research' && <TaskFormResearch onSubmit={handleSubmit} loading={loading} />}
+          {activeTab === 'intel' && <TaskFormIntel onSubmit={handleSubmit} loading={loading} activeTaskId={activeTaskId} />}
           {activeTab === 'code-task' && <TaskFormCodeTask onSubmit={handleSubmit} loading={loading} />}
-          {activeTab === 'topic-tracker' && <TaskFormTopicTracker onSubmit={handleSubmit} loading={loading} activeTaskId={activeTaskId} />}
           {activeTab === 'self-improve' && <TaskFormSelfImprove onSubmit={handleSubmit} loading={loading} />}
         </div>
       </div>
@@ -121,10 +153,10 @@ function TasksPageInner() {
       {/* Task List */}
       <div className="section">
         <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px' }}>
-          {TABS.find((t) => t.id === activeTab)?.label} Tasks
+          {tabDef.label} Tasks
         </h2>
         <div className="card">
-          <TaskList tasks={tasks} serviceType={activeTab} onRefresh={fetchTasks} />
+          <TaskList tasks={tasks} serviceType={activeTab === 'intel' ? 'report' : tabDef.serviceTypes[0]} isIntelTab={activeTab === 'intel'} onRefresh={fetchTasks} />
         </div>
       </div>
     </div>
