@@ -25,16 +25,30 @@ export class CcusageClient {
         sessionId,
       ], { timeout: CCUSAGE_TIMEOUT_MS });
       const data = JSON.parse(stdout);
-      const session = data.sessions?.[0];
-      if (!session) return null;
+
+      // --id returns a flat object: { sessionId, totalCost, totalTokens, entries[] }
+      // Aggregate token counts from entries
+      if (!data || !data.entries || data.entries.length === 0) return null;
+
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let cacheCreationTokens = 0;
+      let cacheReadTokens = 0;
+
+      for (const entry of data.entries) {
+        inputTokens += entry.inputTokens ?? 0;
+        outputTokens += entry.outputTokens ?? 0;
+        cacheCreationTokens += entry.cacheCreationTokens ?? 0;
+        cacheReadTokens += entry.cacheReadTokens ?? 0;
+      }
 
       return {
-        sessionId: session.sessionId ?? sessionId,
-        inputTokens: session.inputTokens ?? 0,
-        outputTokens: session.outputTokens ?? 0,
-        cacheCreationTokens: session.cacheCreationTokens ?? 0,
-        cacheReadTokens: session.cacheReadTokens ?? 0,
-        totalCost: session.totalCost ?? 0,
+        sessionId: data.sessionId ?? sessionId,
+        inputTokens,
+        outputTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
+        totalCost: data.totalCost ?? 0,
       };
     } catch {
       return null;

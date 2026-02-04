@@ -14,6 +14,7 @@ export interface ClaudeTaskParams {
   workingDir: string;
   maxTurns?: number;
   model?: string;
+  onStdoutChunk?: (chunk: string) => void;
 }
 
 export interface ClaudeTaskResult {
@@ -33,7 +34,8 @@ async function listJsonlFiles(dir: string): Promise<string[]> {
 }
 
 function getProjectKey(workingDir: string): string {
-  return workingDir.replace(/\//g, "-");
+  const absPath = path.resolve(workingDir);
+  return absPath.replace(/\//g, "-");
 }
 
 export async function spawnClaudeTask(
@@ -65,7 +67,7 @@ export async function spawnClaudeTask(
 
   const child = spawn("claude", args, {
     cwd: params.workingDir,
-    stdio: ["pipe", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env },
   });
 
@@ -73,7 +75,11 @@ export async function spawnClaudeTask(
   let stderr = "";
 
   child.stdout.on("data", (chunk: Buffer) => {
-    stdout += chunk.toString();
+    const text = chunk.toString();
+    stdout += text;
+    if (params.onStdoutChunk) {
+      params.onStdoutChunk(text);
+    }
   });
 
   child.stderr.on("data", (chunk: Buffer) => {
@@ -98,6 +104,6 @@ export async function spawnClaudeTask(
     exitCode,
     stdout,
     stderr,
-    sessionId: projectKey,
+    sessionId: sessionUuid,
   };
 }

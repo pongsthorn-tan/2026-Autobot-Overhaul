@@ -234,17 +234,18 @@ tr:hover td {
 }
 
 /* Form elements */
-input, select {
+input, select, textarea {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
   color: var(--text-primary);
   font-size: 0.875rem;
+  font-family: inherit;
   outline: none;
 }
 
-input:focus, select:focus {
+input:focus, select:focus, textarea:focus {
   border-color: var(--accent-blue);
 }
 

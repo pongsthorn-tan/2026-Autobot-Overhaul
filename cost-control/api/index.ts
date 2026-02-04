@@ -43,4 +43,39 @@ export class CostControlAPI {
   async getAllTaskSummaries(): Promise<TaskCostSummary[]> {
     return this.costTracker.getTaskSummaries();
   }
+
+  async getServiceCostSummaries(): Promise<{
+    serviceId: string;
+    serviceName: string;
+    totalCost: number;
+    totalTokens: number;
+    taskCount: number;
+    iterationCount: number;
+  }[]> {
+    const entries = await this.costTracker.getEntries();
+    const byService = new Map<string, typeof entries>();
+
+    for (const entry of entries) {
+      const existing = byService.get(entry.serviceId) ?? [];
+      existing.push(entry);
+      byService.set(entry.serviceId, existing);
+    }
+
+    const summaries = [];
+    for (const [serviceId, serviceEntries] of byService) {
+      const taskIds = new Set(serviceEntries.map((e) => e.taskId));
+      summaries.push({
+        serviceId,
+        serviceName: serviceId,
+        totalCost: serviceEntries.reduce((sum, e) => sum + e.estimatedCost, 0),
+        totalTokens: serviceEntries.reduce(
+          (sum, e) => sum + e.tokensInput + e.tokensOutput, 0,
+        ),
+        taskCount: taskIds.size,
+        iterationCount: serviceEntries.length,
+      });
+    }
+
+    return summaries;
+  }
 }

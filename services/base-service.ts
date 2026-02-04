@@ -21,10 +21,24 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
+export interface TaskProgressEvent {
+  type: "prompt" | "chunk" | "step" | "cost" | "done" | "error";
+  prompt?: string;
+  model?: string;
+  text?: string;
+  step?: { index: number; label: string; status: string };
+  cost?: number;
+  output?: string;
+  error?: string;
+}
+
+export type ProgressCallback = (event: TaskProgressEvent) => void;
+
 export interface StandaloneContext {
   model: ClaudeModel;
   budgetKey: string;
   runRecord: RunRecord;
+  onProgress?: ProgressCallback;
 }
 
 const TASKS_BASE = path.resolve(process.cwd(), "tasks");
@@ -150,6 +164,7 @@ export abstract class BaseService implements Service {
     existingTaskId?: string;
     modelOverride?: ClaudeModel;
     serviceIdOverride?: string;
+    onProgress?: ProgressCallback;
   }): Promise<{ taskId: string; output: string; costEntry: import("../shared/types/cost.js").CostEntry }> {
     const taskId = params.existingTaskId ?? generateTaskId(this.getServiceId(), params.label);
     const taskLabel = `${this.getServiceId()}: ${params.label}`;
@@ -162,11 +177,23 @@ export abstract class BaseService implements Service {
 
     this.logger.info(`Starting task: ${params.label}`, { taskId, iteration });
 
+    // Emit prompt event before spawning
+    if (params.onProgress) {
+      params.onProgress({
+        type: "prompt",
+        prompt: params.prompt,
+        model: MODEL_IDS[effectiveModel],
+      });
+    }
+
     const result = await spawnClaudeTask({
       prompt: params.prompt,
       workingDir: taskDir,
       maxTurns: params.maxTurns ?? 5,
       model: MODEL_IDS[effectiveModel],
+      onStdoutChunk: params.onProgress
+        ? (text) => params.onProgress!({ type: "chunk", text })
+        : undefined,
     });
 
     const costEntry = await this.costTracker.captureAndRecordCost({
@@ -176,6 +203,11 @@ export abstract class BaseService implements Service {
       iteration,
       sessionId: result.sessionId,
     });
+
+    // Emit cost event
+    if (params.onProgress) {
+      params.onProgress({ type: "cost", cost: costEntry.estimatedCost });
+    }
 
     const logEntry: TaskLog = {
       taskId,
@@ -209,6 +241,11 @@ export abstract class BaseService implements Service {
       costEstimate: costEntry.estimatedCost,
       completedAt: new Date().toISOString(),
     });
+
+    // Emit done event
+    if (params.onProgress) {
+      params.onProgress({ type: "done", output: result.stdout });
+    }
 
     return { taskId, output: result.stdout, costEntry };
   }
@@ -247,7 +284,7 @@ export abstract class BaseService implements Service {
     };
   }
 
-  async runStandalone(taskParams: TaskParams, model: ClaudeModel, budgetKey: string): Promise<RunRecord> {
+  async runStandalone(taskParams: TaskParams, model: ClaudeModel, budgetKey: string, onProgress?: ProgressCallback): Promise<RunRecord> {
     const runRecord: RunRecord = {
       runId: uuidv4(),
       cycleNumber: 0,
@@ -261,14 +298,18 @@ export abstract class BaseService implements Service {
       totalCost: 0,
     };
 
+    // Set as current run so recordTaskInRun() captures output
+    this._currentRun = runRecord;
+
     try {
-      await this.executeStandalone(taskParams, { model, budgetKey, runRecord });
+      await this.executeStandalone(taskParams, { model, budgetKey, runRecord, onProgress });
       runRecord.status = "completed";
     } catch (err) {
       runRecord.status = "errored";
       throw err;
     } finally {
       runRecord.completedAt = new Date().toISOString();
+      this._currentRun = null;
     }
 
     return runRecord;

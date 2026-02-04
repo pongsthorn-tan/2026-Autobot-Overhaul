@@ -8,9 +8,9 @@ export type ServiceStatus = "idle" | "running" | "paused" | "stopped" | "errored
 export type ClaudeModel = "haiku" | "sonnet" | "opus";
 
 export const MODEL_IDS: Record<ClaudeModel, string> = {
-  haiku: "claude-haiku-4-20250514",
-  sonnet: "claude-sonnet-4-20250514",
-  opus: "claude-opus-4-20250514",
+  haiku: "haiku",
+  sonnet: "sonnet",
+  opus: "opus",
 };
 
 export interface ServiceModelConfig {
