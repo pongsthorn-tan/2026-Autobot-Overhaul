@@ -140,6 +140,15 @@ export interface NextRunsResponse {
 export type StandaloneTaskStatus = 'pending' | 'scheduled' | 'running' | 'completed' | 'errored' | 'paused';
 export type TaskServiceType = 'report' | 'research' | 'code-task' | 'topic-tracker' | 'self-improve';
 
+export interface CycleRecord {
+  cycle: number;
+  startedAt: string;
+  completedAt: string;
+  costSpent: number;
+  output: string | null;
+  error: string | null;
+}
+
 export interface StandaloneTask {
   taskId: string;
   serviceType: TaskServiceType;
@@ -153,6 +162,7 @@ export interface StandaloneTask {
   completedAt: string | null;
   costSpent: number;
   cyclesCompleted?: number;
+  cycleHistory?: CycleRecord[];
   error: string | null;
   output: string | null;
 }
@@ -260,6 +270,10 @@ export function pollRefinePrompt(jobId: string): Promise<RefineJobPollResponse> 
 // Task detail fetch
 export function getTask(taskId: string): Promise<StandaloneTask> {
   return apiFetch<StandaloneTask>(`/api/tasks/${taskId}`);
+}
+
+export function getTaskCycles(taskId: string): Promise<CycleRecord[]> {
+  return apiFetch<CycleRecord[]>(`/api/tasks/${taskId}/cycles`);
 }
 
 // SSE Streaming

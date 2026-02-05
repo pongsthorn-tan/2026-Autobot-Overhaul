@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Task editing** — Edit task params, model, and budget after creation via PATCH `/api/tasks/:taskId`. Inline edit form on task detail page renders service-specific fields (prompt, topic, maxSteps, preset, spending limits, etc.). (`be1d8d4`)
+- **Pause/resume scheduled tasks** — POST `/api/tasks/:taskId/pause` unschedules callbacks and sets status to "paused"; POST `/api/tasks/:taskId/resume` re-registers callbacks and restores "scheduled" status. (`be1d8d4`)
+- **Remove schedule** — Send `{ schedule: null }` via PATCH to clear a task's schedule entirely. (`be1d8d4`)
+- **"paused" task status** — New status in `StandaloneTaskStatus` union, with orange badge in task list and detail page. (`be1d8d4`)
+- Inline Pause/Resume buttons in task list for scheduled/paused tasks.
+
 ### Changed
 - **Consolidated Intel forms** — Merged Report, Research, and Topic Tracker into a single Intel tab with a style selector (Report / Research / Topic Tracker pills). Reduced task page from 5 tabs to 3: Intel, Code Task, Self-Improve. (`abd72b7`)
 - **Human-readable task IDs** — Replaced UUID-based task IDs with slug-based IDs using `generateTaskId()`. Example: `report-ai-breakthroughs-2026-02-04T1312`. (`4130680`)

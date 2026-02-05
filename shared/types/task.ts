@@ -52,6 +52,15 @@ export type TaskParams =
   | TopicTrackerTaskParams
   | SelfImproveTaskParams;
 
+export interface CycleRecord {
+  cycle: number;
+  startedAt: string;
+  completedAt: string;
+  costSpent: number;
+  output: string | null;
+  error: string | null;
+}
+
 export interface StandaloneTask {
   taskId: string;
   serviceType: TaskServiceType;
@@ -65,6 +74,7 @@ export interface StandaloneTask {
   completedAt: string | null;
   costSpent: number;
   cyclesCompleted?: number;
+  cycleHistory?: CycleRecord[];
   error: string | null;
   output: string | null;
 }

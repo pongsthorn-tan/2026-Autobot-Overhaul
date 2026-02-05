@@ -1,4 +1,4 @@
-import { StandaloneTask, CreateTaskInput, UpdateTaskInput, TaskServiceType, TopicTrackerTaskParams, SpendingLimit } from "../../shared/types/task.js";
+import { StandaloneTask, CreateTaskInput, UpdateTaskInput, TaskServiceType, TopicTrackerTaskParams, SpendingLimit, CycleRecord } from "../../shared/types/task.js";
 import { Schedule, ScheduleConfig, ScheduleSlot } from "../../shared/types/scheduler.js";
 import { TaskStore } from "../../shared/task-store/index.js";
 import { ServiceRegistry } from "../registry/index.js";
@@ -348,12 +348,31 @@ export class TaskExecutor {
         .filter(Boolean)
         .join("\n\n");
 
-      await this.taskStore.update(taskId, {
+      const completedAt = new Date().toISOString();
+
+      // Append cycle record if task is recurring
+      const isRecurring = !!task.schedule;
+      const updatePatch: Partial<StandaloneTask> = {
         status: "completed",
-        completedAt: new Date().toISOString(),
+        completedAt,
         costSpent,
         output: taskOutput || null,
-      });
+      };
+
+      if (isRecurring) {
+        const history = task.cycleHistory ?? [];
+        const cycleRecord: CycleRecord = {
+          cycle: (task.cyclesCompleted ?? 0) + 1,
+          startedAt: task.startedAt ?? completedAt,
+          completedAt,
+          costSpent,
+          output: taskOutput || null,
+          error: null,
+        };
+        updatePatch.cycleHistory = [...history, cycleRecord];
+      }
+
+      await this.taskStore.update(taskId, updatePatch);
 
       // Broadcast done event to SSE clients
       const onProgressDone = this.progressCallbacks.get(taskId);
@@ -373,13 +392,31 @@ export class TaskExecutor {
       }
       const errorMsg = err instanceof Error ? err.message : String(err);
       const budget = await this.budgetManager.getBudget(budgetKey);
+      const errorCompletedAt = new Date().toISOString();
+      const errorCostSpent = budget?.spent ?? 0;
 
-      await this.taskStore.update(taskId, {
+      const errorUpdatePatch: Partial<StandaloneTask> = {
         status: "errored",
-        completedAt: new Date().toISOString(),
-        costSpent: budget?.spent ?? 0,
+        completedAt: errorCompletedAt,
+        costSpent: errorCostSpent,
         error: errorMsg,
-      });
+      };
+
+      // Append error cycle record if task is recurring
+      if (task.schedule) {
+        const history = task.cycleHistory ?? [];
+        const cycleRecord: CycleRecord = {
+          cycle: (task.cyclesCompleted ?? 0) + 1,
+          startedAt: task.startedAt ?? errorCompletedAt,
+          completedAt: errorCompletedAt,
+          costSpent: errorCostSpent,
+          output: null,
+          error: errorMsg,
+        };
+        errorUpdatePatch.cycleHistory = [...history, cycleRecord];
+      }
+
+      await this.taskStore.update(taskId, errorUpdatePatch);
 
       logger.error(`Task errored: ${taskId}`, { error: errorMsg });
     } finally {

@@ -446,6 +446,15 @@ async function handleRoute(
     return updated;
   }
 
+  // GET /api/tasks/:taskId/cycles — get cycle history
+  const taskCyclesMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/cycles$/);
+  if (taskCyclesMatch && method === "GET") {
+    const taskId = taskCyclesMatch[1];
+    const task = await ctx.taskExecutor.getTask(taskId);
+    if (!task) throw new NotFoundError(`Task not found: ${taskId}`);
+    return task.cycleHistory ?? [];
+  }
+
   // GET /api/tasks/:taskId/output — get task output
   const taskOutputMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/output$/);
   if (taskOutputMatch && method === "GET") {

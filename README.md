@@ -16,6 +16,7 @@ Autobot is a self-contained system for scheduling and running AI-powered service
 - **Web Dashboard** — Real-time service status, cost drilldowns, log viewer, and service controls
 - **3 Service Modules** — Intel (Report + Research + Topic Tracker), Code Task, Self-Improve
 - **Human-Readable Task IDs** — Slugs like `report-ai-breakthroughs-2026-02-04T1312` instead of UUIDs
+- **Task Editing & Schedule Control** — Edit task params/model/budget after creation; pause, resume, and remove schedules on scheduled tasks
 
 ---
 
@@ -436,6 +437,14 @@ The tasks page has 3 tabs:
 - **Report** — Multi-step flow: Describe → (optional AI refinement via SSE) → Review → Configure → Run. Supports prompt versioning and refine-again.
 - **Research** — Dual model pickers (planner + executor), configurable max steps and revisions per step.
 - **Topic Tracker** — Preset system (Company News, Market & Crypto, Election, Tech Launch, Custom) with interval/weekly scheduling and spending limits.
+
+#### Task Detail Page (`/tasks/{taskId}`)
+
+- **Edit** — Inline edit form for model, budget, and service-specific params (hidden when task is running)
+- **Pause Schedule** — Unschedules callbacks, preserves schedule config (shown for scheduled tasks)
+- **Resume Schedule** — Re-registers callbacks from stored schedule (shown for paused tasks)
+- **Remove Schedule** — Clears schedule and marks task completed (shown for scheduled/paused tasks)
+- Task list shows inline Pause/Resume buttons and an orange badge for paused status
 
 ### Dashboard (`/`)
 

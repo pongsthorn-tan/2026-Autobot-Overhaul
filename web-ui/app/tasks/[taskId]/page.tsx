@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { getTask, updateTask, pauseTask, resumeTask, type StandaloneTask, type ClaudeModel, type UpdateTaskInput } from '../../lib/api';
+import { getTask, updateTask, pauseTask, resumeTask, type StandaloneTask, type ClaudeModel, type UpdateTaskInput, type CycleRecord } from '../../lib/api';
 import { formatDate } from '../../lib/format-date';
 import ReportRenderer from '../../components/report-renderer';
 import LiveLog from '../../components/live-log';
@@ -45,6 +45,98 @@ function buildEditState(task: StandaloneTask): EditFormState {
     targetPath: String(p.targetPath ?? ''),
     maxIterations: String(p.maxIterations ?? ''),
   };
+}
+
+function CycleHistorySection({ cycles }: { cycles: CycleRecord[] }) {
+  const [expandedCycle, setExpandedCycle] = useState<number | null>(null);
+
+  // Show newest first, skip the latest cycle (it's already shown as main output)
+  const previousCycles = [...cycles].reverse().slice(1);
+
+  if (previousCycles.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: '24px' }}>
+      <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '12px' }}>
+        Cycle History ({previousCycles.length} previous)
+      </h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {previousCycles.map((cycle) => {
+          const isExpanded = expandedCycle === cycle.cycle;
+          const hasError = !!cycle.error;
+          const statusColor = hasError ? 'var(--accent-red)' : 'var(--accent-green)';
+
+          return (
+            <div key={cycle.cycle}>
+              <div
+                onClick={() => setExpandedCycle(isExpanded ? null : cycle.cycle)}
+                style={{
+                  padding: '10px 14px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border)',
+                  borderRadius: isExpanded ? '6px 6px 0 0' : '6px',
+                  borderBottom: isExpanded ? 'none' : undefined,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+              >
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: statusColor,
+                  flexShrink: 0,
+                }} />
+                <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                  Cycle {cycle.cycle}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  {formatDate(cycle.completedAt)}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  ${cycle.costSpent.toFixed(2)}
+                </span>
+                {hasError && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--accent-red)' }}>
+                    Error
+                  </span>
+                )}
+                <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {isExpanded ? '\u25B2' : '\u25BC'}
+                </span>
+              </div>
+              {isExpanded && (
+                <div style={{
+                  padding: '16px',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border)',
+                  borderTop: '1px solid var(--border-color)',
+                  borderRadius: '0 0 6px 6px',
+                  maxHeight: '500px',
+                  overflow: 'auto',
+                }}>
+                  {cycle.error && (
+                    <div className="error-message" style={{ marginBottom: '12px' }}>
+                      {cycle.error}
+                    </div>
+                  )}
+                  {cycle.output ? (
+                    <ReportRenderer output={cycle.output} />
+                  ) : (
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                      No output for this cycle
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function TaskDetailPage() {
@@ -615,6 +707,11 @@ export default function TaskDetailPage() {
             No output available
           </div>
         )
+      )}
+
+      {/* Cycle History */}
+      {task.cycleHistory && task.cycleHistory.length > 0 && (
+        <CycleHistorySection cycles={task.cycleHistory} />
       )}
     </div>
   );
