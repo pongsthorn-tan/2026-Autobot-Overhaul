@@ -748,6 +748,15 @@ async function handleRoute(
     }
   }
 
+  // GET /api/usage-report — Claude Code usage report from stats-cache.json
+  if (pathname === "/api/usage-report" && method === "GET") {
+    const report = await ctx.costControlAPI.getUsageReport();
+    if (!report) {
+      throw new NotFoundError("Usage report not available — ~/.claude/stats-cache.json not found");
+    }
+    return report;
+  }
+
   // GET /api/costs
   if (pathname === "/api/costs" && method === "GET") {
     return ctx.costControlAPI.getServiceCostSummaries();

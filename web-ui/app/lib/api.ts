@@ -326,3 +326,49 @@ export function streamRefinePrompt(jobId: string, onEvent: (e: RefineStreamEvent
   };
   return () => es.close();
 }
+
+// Usage Report types (from nazt/claude-usage-report integration)
+
+export interface UsageReportModelUsage {
+  id: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  total: number;
+}
+
+export interface UsageReportDailyActivity {
+  date: string;
+  messageCount: number;
+  sessionCount: number;
+  toolCallCount: number;
+}
+
+export interface UsageReportData {
+  generated: string;
+  firstSessionDate: string | null;
+  lastComputedDate: string | null;
+  totalTokens: number;
+  totalInput: number;
+  totalOutput: number;
+  totalCacheRead: number;
+  totalCacheCreate: number;
+  costEstimate: number;
+  totalMessages: number;
+  totalSessions: number;
+  totalToolCalls: number;
+  dayCount: number;
+  avgMessagesPerDay: number;
+  models: UsageReportModelUsage[];
+  daily: UsageReportDailyActivity[];
+  hourCounts: Record<number, number>;
+  peakDay: UsageReportDailyActivity | null;
+  topDays: UsageReportDailyActivity[];
+  valueMultiplier: number;
+  planCost: number;
+}
+
+export function fetchUsageReport(): Promise<UsageReportData> {
+  return apiFetch<UsageReportData>('/api/usage-report');
+}

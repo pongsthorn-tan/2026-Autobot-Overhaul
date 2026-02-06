@@ -1,12 +1,22 @@
 import { Budget, CostReport, TaskCostSummary } from "../../shared/types/cost.js";
+import { UsageReportData } from "../../shared/types/usage-report.js";
 import { BudgetManager } from "../budget/index.js";
 import { CostTracker } from "../tracker/index.js";
+import { UsageReportReader } from "../usage-report/index.js";
 
 export class CostControlAPI {
+  private usageReportReader: UsageReportReader;
+
   constructor(
     private budgetManager: BudgetManager,
     private costTracker: CostTracker,
-  ) {}
+  ) {
+    this.usageReportReader = new UsageReportReader();
+  }
+
+  async getUsageReport(): Promise<UsageReportData | null> {
+    return this.usageReportReader.getReport();
+  }
 
   async getBudget(serviceId: string): Promise<Budget | null> {
     return this.budgetManager.getBudget(serviceId);

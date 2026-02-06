@@ -50,6 +50,9 @@ export default function RootLayout({
               <a href="/costs" className="nav-link">
                 Costs
               </a>
+              <a href="/usage-report" className="nav-link">
+                Usage Report
+              </a>
               <a href="/logs" className="nav-link">
                 Logs
               </a>
